@@ -1,0 +1,2656 @@
+
+import os
+import json
+import time
+import shutil
+import requests
+from datetime import datetime
+
+
+API_KEY = "8500113706:AAEvt1tqEk21uKhgE_7VEiPD5cLjl49NzJ8"
+ADMIN_ID = "7710687157"
+
+BASE_URL = "https://api.telegram.org/bot" + API_KEY + "/"
+
+DIRS = [
+    "odam", "pul", "bonus", "status", "tizim",
+    "oplata", "ban", "step", "admin", "tugma",
+    "matn", "buyurtma", "nakrutka"
+]
+
+def mkdir_safe(path):
+    try:
+        os.makedirs(path, exist_ok=True)
+    except Exception:
+        pass
+
+def get_file(path, default=""):
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
+    except Exception:
+        return default
+
+def put_file(path, content):
+    try:
+        dir_name = os.path.dirname(path)
+        if dir_name:
+            mkdir_safe(dir_name)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(str(content))
+    except Exception as e:
+        print("put_file error:", e)
+
+def file_exists(path):
+    return os.path.exists(path)
+
+def delete_path(path):
+    try:
+        if os.path.isdir(path):
+            shutil.rmtree(path)
+        elif os.path.isfile(path):
+            os.remove(path)
+    except Exception:
+        pass
+
+def unlink(path):
+    try:
+        if os.path.isfile(path):
+            os.remove(path)
+    except Exception:
+        pass
+
+def bot(method, data=None):
+    url = BASE_URL + method
+    try:
+        if data:
+            resp = requests.post(url, data=data, timeout=15)
+        else:
+            resp = requests.post(url, timeout=15)
+        return resp.json()
+    except Exception as e:
+        print("bot() error:", e)
+        return {}
+
+def send_message(chat_id, text, reply_markup=None, parse_mode="HTML",
+                 disable_web_page_preview=False):
+    data = {
+        "chat_id": str(chat_id),
+        "text": text,
+        "parse_mode": parse_mode,
+    }
+    if reply_markup:
+        data["reply_markup"] = json.dumps(reply_markup) if isinstance(reply_markup, dict) else reply_markup
+    if disable_web_page_preview:
+        data["disable_web_page_preview"] = "true"
+    return bot("sendMessage", data)
+
+def edit_message_text(chat_id, message_id, text, reply_markup=None, parse_mode="HTML"):
+    data = {
+        "chat_id": str(chat_id),
+        "message_id": str(message_id),
+        "text": text,
+        "parse_mode": parse_mode,
+    }
+    if reply_markup:
+        data["reply_markup"] = json.dumps(reply_markup) if isinstance(reply_markup, dict) else reply_markup
+    return bot("editMessageText", data)
+
+def delete_message(chat_id, message_id):
+    return bot("deleteMessage", {"chat_id": str(chat_id), "message_id": str(message_id)})
+
+def answer_callback(qid, text, show_alert=False):
+    return bot("answerCallbackQuery", {
+        "callback_query_id": str(qid),
+        "text": text,
+        "show_alert": "true" if show_alert else "false"
+    })
+
+def forward_message(from_chat_id, chat_id, message_id):
+    return bot("forwardMessage", {
+        "from_chat_id": str(from_chat_id),
+        "chat_id": str(chat_id),
+        "message_id": str(message_id)
+    })
+
+def get_chat_member(chat_id, user_id):
+    return bot("getChatMember", {"chat_id": str(chat_id), "user_id": str(user_id)})
+
+def get_chat(chat_id):
+    return bot("getChat", {"chat_id": str(chat_id)})
+
+def get_user_profile_photos(user_id):
+    return bot("getUserProfilePhotos", {"user_id": str(user_id), "limit": "1"})
+
+def send_photo(chat_id, photo, caption, reply_markup=None, parse_mode="HTML"):
+    data = {
+        "chat_id": str(chat_id),
+        "photo": photo,
+        "caption": caption,
+        "parse_mode": parse_mode,
+    }
+    if reply_markup:
+        data["reply_markup"] = json.dumps(reply_markup) if isinstance(reply_markup, dict) else reply_markup
+    return bot("sendPhoto", data)
+
+def edit_message_caption(chat_id, message_id, caption, reply_markup=None, parse_mode="HTML"):
+    data = {
+        "chat_id": str(chat_id),
+        "message_id": str(message_id),
+        "caption": caption,
+        "parse_mode": parse_mode,
+    }
+    if reply_markup:
+        data["reply_markup"] = json.dumps(reply_markup) if isinstance(reply_markup, dict) else reply_markup
+    return bot("editMessageCaption", data)
+
+def get_admin_ids():
+    admins_txt = get_file("admin/admins.txt", "")
+    ids = [a.strip() for a in admins_txt.split("\n") if a.strip()]
+    if ADMIN_ID not in ids:
+        ids.append(ADMIN_ID)
+    return ids
+
+def joinchat(user_id):
+    kanal = get_file("admin/kanal.txt", "").strip()
+    if not kanal:
+        return True
+    lines = [l.strip() for l in kanal.split("\n") if l.strip()]
+    inline_keyboard = []
+    uns = False
+    for line in lines:
+        if "@" in line:
+            parts = line.split("@")
+            url = parts[1].strip()
+            try:
+                chat_info = get_chat("@" + url)
+                chat_title = chat_info.get("result", {}).get("title", url)
+            except Exception:
+                chat_title = url
+            member = get_chat_member("@" + url, user_id)
+            stat = member.get("result", {}).get("status", "")
+            if stat in ("creator", "administrator", "member"):
+                inline_keyboard.append([{"text": "✅ " + chat_title, "url": "https://t.me/" + url}])
+            else:
+                inline_keyboard.append([{"text": "❌ " + chat_title, "url": "https://t.me/" + url}])
+                uns = True
+    inline_keyboard.append([{"text": "Tekshirish", "callback_data": "result"}])
+    if uns:
+        send_message(
+            user_id,
+            "<b>⚠️ Botdan foydalanish uchun, quyidagi kanallarga obuna bo'ling:</b>",
+            reply_markup={"inline_keyboard": inline_keyboard},
+            disable_web_page_preview=True
+        )
+        return False
+    return True
+
+def get_menu_keyboard(is_admin=False):
+    key1 = get_file("tugma/key1.txt", "⚡ Xizmat Buyurtish")
+    key2 = get_file("tugma/key2.txt", "📦 Mening Buyurtmalarim")
+    key3 = get_file("tugma/key3.txt", "🌟 Referallar va Bonus")
+    key4 = get_file("tugma/key4.txt", "💎 Mening Kabineti")
+    key5 = get_file("tugma/key5.txt", "💳 Wallet To'ldirish")
+    key6 = get_file("tugma/key6.txt", "💬 Qo'llab-Quvvatlash")
+    key7 = get_file("tugma/key7.txt", "❓ Yordam va Qoidalar")
+    rows = [
+        [{"text": key1}],
+        [{"text": key2}, {"text": key4}],
+        [{"text": key3}, {"text": key5}],
+        [{"text": key7}, {"text": key6}],
+    ]
+    if is_admin:
+        rows.append([{"text": "🗄 Boshqarish"}])
+    return {"resize_keyboard": True, "keyboard": rows}
+
+def get_panel_keyboard():
+    return {
+        "resize_keyboard": True,
+        "keyboard": [
+            [{"text": "⚙ Asosiy sozlamalar"}],
+            [{"text": "📊 Statistika"}, {"text": "✉ Xabarnoma"}],
+            [{"text": "📢 Kanallar"}, {"text": "🛍 Xizmatlar"}],
+            [{"text": "🔎 Foydalanuvchini boshqarish"}],
+            [{"text": "🕹 Tugmalar"}, {"text": "🛠 Foiz sozlamalari"}],
+            [{"text": "🎟 Promokod"}, {"text": "◀️ Orqaga"}]
+        ]
+    }
+
+def get_asosiy_keyboard():
+    return {
+        "resize_keyboard": True,
+        "keyboard": [
+            [{"text": "*️⃣ Birlamchi sozlamalar"}],
+            [{"text": "📋 Adminlar"}, {"text": "💳 Hamyonlar"}],
+            [{"text": "🔑 API sozlash"}, {"text": "🤖 Bot holati"}],
+            [{"text": "🗄 Boshqarish"}],
+        ]
+    }
+
+def get_back_keyboard():
+    return {"resize_keyboard": True, "keyboard": [[{"text": "◀️ Orqaga"}]]}
+
+def get_boshqarish_keyboard():
+    return {"resize_keyboard": True, "keyboard": [[{"text": "🗄 Boshqarish"}]]}
+
+def get_nakrutka_keyboard():
+    bolim = get_file("nakrutka/bolim.txt", "").strip()
+    if not bolim:
+        return None
+    qator1 = int(get_file("tugma/qator1.txt", "2") or "2")
+    lines = [l for l in bolim.split("\n") if l.strip()]
+    keys = []
+    for line in lines:
+        ichki = get_file("nakrutka/{}/ichki.txt".format(line), "")
+        ta = ichki.count("\n")
+        keys.append({"text": "{} - {}".format(line, ta), "callback_data": "nakrutka-" + line})
+    rows = [keys[i:i+qator1] for i in range(0, len(keys), qator1)]
+    return {"inline_keyboard": rows}
+
+def init_dirs():
+    for d in DIRS:
+        mkdir_safe(d)
+    if not file_exists("admin/admins.txt"):
+        put_file("admin/admins.txt", ADMIN_ID)
+    if not file_exists("admin/valyuta.txt"):
+        put_file("admin/valyuta.txt", "so'm")
+    if not file_exists("admin/api.txt"):
+        put_file("admin/api.txt", "")
+    if not file_exists("admin/sayt.txt"):
+        put_file("admin/sayt.txt", "")
+    if not file_exists("admin/foiz.txt"):
+        put_file("admin/foiz.txt", "10")
+    if not file_exists("admin/foiz2.txt"):
+        put_file("admin/foiz2.txt", "5")
+    if not file_exists("admin/kurs.txt"):
+        put_file("admin/kurs.txt", "1")
+    if not file_exists("admin/card.txt"):
+        put_file("admin/card.txt", "100")
+    if not file_exists("admin/referal.txt"):
+        put_file("admin/referal.txt", "100")
+    if not file_exists("admin/transfer.txt"):
+        put_file("admin/transfer.txt", "0")
+    if not file_exists("admin/holat.txt"):
+        put_file("admin/holat.txt", "Yoqilgan")
+    if not file_exists("admin/vip.txt"):
+        put_file("admin/vip.txt", "15000")
+    if not file_exists("admin/kanal.txt"):
+        put_file("admin/kanal.txt", "")
+    if not file_exists("admin/kanal2.txt"):
+        put_file("admin/kanal2.txt", "")
+    if not file_exists("bonus/bonmiq.txt"):
+        put_file("bonus/bonmiq.txt", "100")
+    if not file_exists("bonus/bonnom.txt"):
+        put_file("bonus/bonnom.txt", "")
+    if not file_exists("buyurtma/id.txt"):
+        put_file("buyurtma/id.txt", "0")
+    if not file_exists("nakrutka/bolim.txt"):
+        put_file("nakrutka/bolim.txt", "")
+    if not file_exists("tugma/key1.txt"):
+        put_file("tugma/key1.txt", "⚡ Xizmat Buyurtish")
+    if not file_exists("tugma/key2.txt"):
+        put_file("tugma/key2.txt", "📦 Mening Buyurtmalarim")
+    if not file_exists("tugma/key3.txt"):
+        put_file("tugma/key3.txt", "🌟 Referallar va Bonus")
+    if not file_exists("tugma/key4.txt"):
+        put_file("tugma/key4.txt", "💎 Mening Kabineti")
+    if not file_exists("tugma/key5.txt"):
+        put_file("tugma/key5.txt", "💳 Wallet To'ldirish")
+    if not file_exists("tugma/key6.txt"):
+        put_file("tugma/key6.txt", "💬 Qo'llab-Quvvatlash")
+    if not file_exists("tugma/key7.txt"):
+        put_file("tugma/key7.txt", "❓ Yordam va Qoidalar")
+    if not file_exists("tugma/qator1.txt"):
+        put_file("tugma/qator1.txt", "2")
+    if not file_exists("tugma/qator2.txt"):
+        put_file("tugma/qator2.txt", "1")
+    if not file_exists("tugma/qator3.txt"):
+        put_file("tugma/qator3.txt", "5")
+    if not file_exists("tugma/qator4.txt"):
+        put_file("tugma/qator4.txt", "2")
+    if not file_exists("tizim/turi.txt"):
+        put_file("tizim/turi.txt", "")
+    if not file_exists("azo.dat"):
+        put_file("azo.dat", "")
+
+def init_user(cid):
+    cid = str(cid)
+    if not file_exists("pul/{}.txt".format(cid)):
+        put_file("pul/{}.txt".format(cid), "0")
+    if not file_exists("pul/{}.nak".format(cid)):
+        put_file("pul/{}.nak".format(cid), "0")
+    if not file_exists("oplata/{}.txt".format(cid)):
+        put_file("oplata/{}.txt".format(cid), "0")
+    if not file_exists("odam/{}.dat".format(cid)):
+        put_file("odam/{}.dat".format(cid), "0")
+    if not file_exists("odam/{}.card".format(cid)):
+        put_file("odam/{}.card".format(cid), "0")
+    if not file_exists("odam/{}.date".format(cid)):
+        sana1 = datetime.now().strftime("%d/%m/%Y - %H:%M:%S")
+        put_file("odam/{}.date".format(cid), sana1)
+    if not file_exists("status/{}.txt".format(cid)):
+        put_file("status/{}.txt".format(cid), "Oddiy")
+
+def add_user_to_base(user_id):
+    baza = get_file("azo.dat", "")
+    uid = str(user_id)
+    if uid not in baza:
+        with open("azo.dat", "a", encoding="utf-8") as f:
+            f.write("\n" + uid)
+
+def check_orders():
+    sayt = get_file("admin/sayt.txt", "").strip()
+    api = get_file("admin/api.txt", "").strip()
+    valyuta = get_file("admin/valyuta.txt", "so'm")
+    if not sayt or not api:
+        return
+    import glob as glob_mod
+    order_files = glob_mod.glob("buyurtma/*/order.txt")
+    for of in order_files:
+        folder = of.replace("buyurtma/", "").replace("/order.txt", "")
+        order_id = get_file(of, "").strip()
+        ega = get_file("buyurtma/{}/egasi.txt".format(folder), "").strip()
+        if not order_id or not ega:
+            continue
+        try:
+            r = requests.get("{}?key={}&action=status&order={}".format(sayt, api, order_id), timeout=10)
+            stat = r.json()
+            status = stat.get("status", "")
+            remains = stat.get("remains", 0)
+            if status == "Completed":
+                send_message(ega, "<b>✅ Sizning {} raqamli buyurtmangiz to'liq bajarildi.</b>".format(folder))
+                delete_path("buyurtma/{}".format(folder))
+            elif status in ("Canceled", "Partial"):
+                miqdor = float(get_file("buyurtma/{}/miqdor.txt".format(folder), "0") or 0)
+                soni = float(get_file("buyurtma/{}/soni.txt".format(folder), "0") or 1)
+                umumiy = miqdor / soni if soni else 0
+                plus = float(remains or 0) * umumiy
+                cur_bal = float(get_file("pul/{}.txt".format(ega), "0") or 0)
+                put_file("pul/{}.txt".format(ega), str(cur_bal + plus))
+                send_message(ega, "<b>⚠️ Sizning {} raqamli buyurtmangiz bekor qilindi.\n\n💳 Hisobingizga {} {} qaytarildi</b>".format(folder, plus, valyuta))
+                delete_path("buyurtma/{}".format(folder))
+        except Exception as e:
+            print("check_orders error:", e)
+
+def process_message(update):
+    message = update.get("message", {})
+    if not message:
+        return
+
+    cid = str(message.get("chat", {}).get("id", ""))
+    if not cid:
+        return
+
+    text = message.get("text", "") or ""
+    mid = message.get("message_id", 0)
+    uid = str(message.get("from", {}).get("id", cid))
+    name = message.get("from", {}).get("first_name", "")
+    familya = message.get("from", {}).get("last_name", "") or ""
+    username = message.get("from", {}).get("username", "") or ""
+
+    init_user(cid)
+    add_user_to_base(cid)
+
+    admins = get_admin_ids()
+    holat = get_file("admin/holat.txt", "Yoqilgan").strip()
+    is_admin = cid in admins
+
+    if holat == "O'chirilgan" and not is_admin:
+        send_message(cid, "<b>⛔️ Bot vaqtinchalik o'chirilgan!</b>\n\n<i>Botda ta'mirlash ishlari olib borilayotgan bo'lishi mumkin!</i>")
+        return
+
+    ban = get_file("ban/{}.txt".format(cid), "").strip()
+    if ban == "ban":
+        return
+
+    step = get_file("step/{}.step".format(cid), "").strip()
+    menu = get_menu_keyboard(is_admin)
+    panel = get_panel_keyboard()
+    asosiy = get_asosiy_keyboard()
+    back = get_back_keyboard()
+    boshqarish_kb = get_boshqarish_keyboard()
+
+    valyuta = get_file("admin/valyuta.txt", "so'm").strip()
+    pul = float(get_file("pul/{}.txt".format(cid), "0") or 0)
+    odam = int(get_file("odam/{}.dat".format(cid), "0") or 0)
+    by_count = int(get_file("pul/{}.nak".format(cid), "0") or 0)
+    oplata = float(get_file("oplata/{}.txt".format(cid), "0") or 0)
+    status = get_file("status/{}.txt".format(cid), "Oddiy").strip()
+    freecard = int(get_file("odam/{}.card".format(cid), "0") or 0)
+    qoshilgan_vaqt = get_file("odam/{}.date".format(cid), "")
+    transfer = float(get_file("admin/transfer.txt", "0") or 0)
+    taklifpul = float(get_file("admin/referal.txt", "100") or 100)
+    narx = float(get_file("admin/vip.txt", "15000") or 15000)
+    card = float(get_file("admin/card.txt", "100") or 100)
+    kanal = get_file("admin/kanal.txt", "").strip()
+    sayt = get_file("admin/sayt.txt", "").strip()
+    api = get_file("admin/api.txt", "").strip()
+    foiz = float(get_file("admin/foiz.txt", "10") or 10)
+    foiz2 = float(get_file("admin/foiz2.txt", "5") or 5)
+    kurs = float(get_file("admin/kurs.txt", "1") or 1)
+    promo = get_file("admin/kanal2.txt", "").strip()
+    user_id_file = get_file("azo.dat", "")
+    saved = get_file("step/alijonov.txt", "").strip()
+    test = get_file("step/test.txt", "").strip()
+    test1 = get_file("step/test1.txt", "").strip()
+    test2 = get_file("step/test2.txt", "").strip()
+    turi = get_file("tizim/turi.txt", "").strip()
+
+    key1 = get_file("tugma/key1.txt", "🚀 Buyurtma berish").strip()
+    key2 = get_file("tugma/key2.txt", "📊 Buyurtmalarim").strip()
+    key3 = get_file("tugma/key3.txt", "🗣 Referallar").strip()
+    key4 = get_file("tugma/key4.txt", "💵 Hisobim").strip()
+    key5 = get_file("tugma/key5.txt", "💰 Hisob to'ldirish").strip()
+    key6 = get_file("tugma/key6.txt", "☎ Murojaat").strip()
+    key7 = get_file("tugma/key7.txt", "📚 Yordam").strip()
+
+    sana = datetime.now().strftime("%d.%m.%Y - %H:%M:%S")
+
+    if text.startswith("/start"):
+        parts = text.split(" ")
+        refid = parts[1] if len(parts) > 1 else ""
+        if refid and refid != cid and refid.isdigit():
+            if cid not in user_id_file:
+                send_message(refid, "<b>📳 Sizda yangi <a href='tg://user?id={}'>taklif</a> mavjud!</b>".format(cid))
+                put_file("step/{}.id".format(cid), refid)
+                put_file("step/{}.cid".format(cid), refid)
+                if joinchat(cid):
+                    ref_pul = float(get_file("pul/{}.txt".format(refid), "0") or 0)
+                    put_file("pul/{}.txt".format(refid), str(ref_pul + taklifpul))
+                    ref_odam = int(get_file("odam/{}.dat".format(refid), "0") or 0)
+                    put_file("odam/{}.dat".format(refid), str(ref_odam + 1))
+                    send_message(refid, "<b>💎 Do'stingiz botdan to'liq ro'yxatdan o'tganligi uchun sizga {} {} taqdim etildi!</b>".format(int(taklifpul), valyuta))
+                    send_message(cid, "<b>🏠 Bosh sahifa</b>", reply_markup=menu)
+                    unlink("step/{}.id".format(cid))
+                    unlink("step/{}.cid".format(cid))
+                    return
+        if joinchat(cid):
+            send_message(cid, "<b>🏠 BOSH SAHIFA</b>\n\n<i>Quyidagi menyulardan foydalanib, barcha xizmatlarni koʻrishingiz mumkin:</i>", reply_markup=menu)
+            unlink("step/{}.step".format(cid))
+        return
+
+    if text == "◀️ Orqaga" or text == "🔙 Orqaga":
+        send_message(cid, "<b>🏠 BOSH SAHIFA</b>\n\n<i>Kerakli bo'limni tanlang:</i>", reply_markup=menu)
+        unlink("step/{}.bol".format(cid))
+        unlink("step/{}.ich".format(cid))
+        unlink("step/{}.xiz".format(cid))
+        unlink("step/{}.step".format(cid))
+        unlink("step/alijonov.txt")
+        return
+
+    if text == "🗄 Boshqarish" and is_admin:
+        send_message(cid, "<b>🛠️ ADMIN PANEL</b>\n\n<i>Xush kelibsiz! Quyidagi menyulardan foydalanib, botni boshqaring:</i>", reply_markup=panel)
+        unlink("step/{}.step".format(cid))
+        unlink("step/alijonov.txt")
+        unlink("step/test.txt")
+        return
+
+    if text == key4 and joinchat(cid):
+        send_message(cid,
+            "<b>💎 MENING KABINETI</b>\n\n<b>🆔 ID Raqami:</b> <code>{}</code>\n<b>💵 Balans:</b> {} {}\n<b>🎫 Free Card:</b> {} ta\n<b>⭐ Daraja:</b> {}\n\n<b>📦 Buyurtmalar:</b> {} ta\n<b>👥 Referallar:</b> {} ta\n<b>📊 Kiritilgan:</b> {} {}\n<b>📅 Tarixcha:</b> {}".format(
+                cid, int(pul), valyuta, freecard, status, by_count, odam, int(oplata), valyuta, qoshilgan_vaqt),
+            reply_markup={"inline_keyboard": [
+                [{"text": "💳 Wallet To'ldirish", "callback_data": "oplata"}, {"text": "🎁 Chegirma Olish", "callback_data": "chegirmalar"}],
+                [{"text": "💸 Pul O'tkazish", "callback_data": "almashish"}, {"text": "🎟️ Promokod", "callback_data": "promokod"}],
+                [{"text": "🎫 Free Card Sotib Olish", "callback_data": "freecard"}],
+            ]}
+        )
+        unlink("step/{}.bol".format(cid))
+        unlink("step/{}.ich".format(cid))
+        unlink("step/{}.xiz".format(cid))
+        return
+
+    if text == key1 and joinchat(cid):
+        bolim = get_file("nakrutka/bolim.txt", "").strip()
+        if not bolim:
+            send_message(cid, "<b>⚡ XIZMAT BUYURTISH</b>\n\n<i>Tarmoqlar hozirda qo'shilmagan. Iltimos, keyinroq qayta urinib ko'ring.</i>")
+        else:
+            nakrutka_kb = get_nakrutka_keyboard()
+            send_message(cid, "<b>⚡ XIZMAT BUYURTISH</b>\n\n<i>Quyidagi ijtimoiy tarmoqlardan birini tanlang va xizmat buyurtishni boshlang:</i>",
+                reply_markup=nakrutka_kb)
+            unlink("step/{}.bol".format(cid))
+            unlink("step/{}.ich".format(cid))
+            unlink("step/{}.xiz".format(cid))
+        return
+
+    if text == key3 and joinchat(cid):
+        try:
+            photos = get_user_profile_photos(uid)
+            photo_id = photos.get("result", {}).get("photos", [[]])[0][0].get("file_id", None) if photos.get("result", {}).get("photos") else None
+        except Exception:
+            photo_id = None
+        ref_text = "<b>🌟 REFERALLAR VA BONUS</b>\n\n<b>🔗 Sizning referal havolangiz:</b>\n<code>https://t.me/{}?start={}</code>\n\n<b>💰 Olasiz:</b> {} {} har bir referal uchun\n<b>👥 Jami referallar:</b> {} ta\n\n<i>Havolangizni ulashing va foyda oling!</i></b>".format(
+            get_bot_username(), cid, int(taklifpul), valyuta, odam)
+        ref_markup = {"inline_keyboard": [[{"text": "🏆 TOP-10 referal reyting", "callback_data": "reyting"}]]}
+        if photo_id:
+            send_photo(cid, photo_id, ref_text, reply_markup=ref_markup)
+        else:
+            send_message(cid, ref_text, reply_markup=ref_markup)
+        unlink("step/{}.bol".format(cid))
+        unlink("step/{}.ich".format(cid))
+        unlink("step/{}.xiz".format(cid))
+        return
+
+    if text == key5 and joinchat(cid):
+        if not turi:
+            send_message(cid, "<b>💳 WALLET TO'LDIRISH</b>\n\n<i>Hozirda to'lov tizimlari qo'shilmagan. Keyinroq urinib ko'ring.</i>")
+        else:
+            payment_kb = build_payment_keyboard(turi)
+            send_message(cid,
+                "<b>💳 WALLET TO'LDIRISH</b>\n\n<b>🔒 Barcha to'lov tizimlari xavfsiz va himoyalangan.</b>\n\n<b>🆔 Sizning ID:</b> <code>{}</code>\n\n<i>Quydagi to'lov tizimlaridan birini tanlang:</i>".format(cid),
+                reply_markup={"inline_keyboard": payment_kb})
+        unlink("step/{}.bol".format(cid))
+        unlink("step/{}.ich".format(cid))
+        unlink("step/{}.xiz".format(cid))
+        return
+
+    if text == key7 and joinchat(cid):
+        send_message(cid,
+            "<b>❓ YORDAM VA QOIDALAR</b>\n\n<b>🤖 Bot Haqida</b> — Bot va uning barcha imkoniyatlari haqida\n\n<b>📋 Qoidalar</b> — Botdan foydalanish qoidalari va ehtiyotlar",
+            reply_markup={"inline_keyboard": [
+                [{"text": "🤖 Bot Haqida", "callback_data": "bot_haqida"}],
+                [{"text": "📋 Foydalanish Qoidalari", "callback_data": "bot_qoidalari"}],
+                [{"text": "🔙 Orqaga", "callback_data": "orqaga"}],
+            ]}
+        )
+        return
+
+    if text == key2 and joinchat(cid) == True:
+        if by_count == 0:
+            send_message(cid, "<b>📦 MENING BUYURTMALARIM</b>\n\n<i>Hozirda buyurtmalaringiz mavjud emas. Yangi xizmat buyurtish uchun bosh sahifaga qaytavering.</i>", reply_markup=menu)
+        else:
+            send_message(cid, "<b>📦 MENING BUYURTMALARIM</b>\n\n<b>🔍 Buyurtma ID raqamini kiriting va uning holatini bilib oling:</b>",
+                reply_markup={"resize_keyboard": True, "keyboard": [[{"text": "🔙 Orqaga"}]]})
+            put_file("step/{}.step".format(cid), "bytop")
+            unlink("step/{}.bol".format(cid))
+            unlink("step/{}.ich".format(cid))
+            unlink("step/{}.xiz".format(cid))
+        return
+
+    if text == key6 and joinchat(cid):
+        send_message(cid,
+            "<b>💬 QO'LLAB-QUVVATLASH</b>\n\n<b>📝 Murojaat yuboring:</b>\n\n<i>Quyidagi matn yuboring va bizning xodimlar tez orada javob beradilar. Faqat matnni yuboring, rasm yoki boshqa fayl yuborma.</i>",
+            reply_markup={"resize_keyboard": True, "keyboard": [[{"text": "🔙 Orqaga"}]]})
+        put_file("step/{}.step".format(cid), "murojaat")
+        return
+
+    if text == "🤖 Bot holati" and is_admin:
+        holat_cur = get_file("admin/holat.txt", "Yoqilgan").strip()
+        xolat = "O'chirish" if holat_cur == "Yoqilgan" else "Yoqish"
+        send_message(cid, "<b>Hozirgi holat:</b> {}".format(holat_cur),
+            reply_markup={"inline_keyboard": [
+                [{"text": xolat, "callback_data": "bot"}],
+                [{"text": "Yopish", "callback_data": "boshqarish"}]
+            ]})
+        return
+
+    if text == "⚙ Asosiy sozlamalar" and is_admin:
+        send_message(cid, "<b>⚙️ Asosiy sozlamalar bo'limiga xush kelibsiz!</b>\n\n<i>Nimani o'zgartiramiz?</i>",
+            reply_markup=asosiy)
+        return
+
+    if text == "📋 Adminlar" and is_admin:
+        admins_list = get_admin_ids()
+        if cid == ADMIN_ID:
+            send_message(cid, "<b>Quyidagilardan birini tanlang:</b>",
+                reply_markup={"inline_keyboard": [
+                    [{"text": "➕ Yangi admin qo'shish", "callback_data": "add"}],
+                    [{"text": "📑 Ro'yxat", "callback_data": "list"}, {"text": "🗑 O'chirish", "callback_data": "remove"}],
+                ]})
+        else:
+            send_message(cid, "<b>Quyidagilardan birini tanlang:</b>",
+                reply_markup={"inline_keyboard": [[{"text": "📑 Ro'yxat", "callback_data": "list"}]]})
+        return
+
+    if text == "🔑 API sozlash" and is_admin:
+        cur_api = get_file("admin/api.txt", "").strip()
+        cur_sayt = get_file("admin/sayt.txt", "").strip()
+        if not cur_api:
+            ap1 = "<b>kiritilmagan</b>"
+            apt = "🆕 APIni kiritish"
+            sayt1 = "<b>kiritilmagan</b>"
+            balans = "Mavjud emas"
+        else:
+            ap1 = "<code>{}</code>".format(cur_api)
+            apt = "🆕 APIni almashtirish"
+            sayt1 = "<code>{}</code>".format(cur_sayt)
+            try:
+                bl = requests.get("{}?key={}&action=balance".format(cur_sayt, cur_api), timeout=10).json()
+                balans = "{} {}".format(bl.get("balance", "?"), bl.get("currency", ""))
+            except Exception:
+                balans = "Mavjud emas"
+        send_message(cid,
+            "📄<b> API ma'lumotlari:</b>\n➖➖➖➖➖➖➖➖➖➖➖\n<b>API havola:</b>\n{}\n\n<b>API kalit:</b>\n{}\n\n<b>API balans:</b>\n{}\n➖➖➖➖➖➖➖➖➖➖➖\n<i>Quyidagilardan birini tanlang:</i>".format(sayt1, ap1, balans),
+            reply_markup={"inline_keyboard": [[{"text": apt, "callback_data": "yangiapi"}]]})
+        return
+
+    if text == "💳 Hamyonlar" and is_admin:
+        turi_list = get_file("tizim/turi.txt", "").strip()
+        if not turi_list:
+            send_message(cid, "<b>Quyidagilardan birini tanlang:</b>",
+                reply_markup={"inline_keyboard": [[{"text": "➕ Yangi to'lov tizimi qo'shish", "callback_data": "new"}]]})
+        else:
+            pay_kb = build_delete_payment_keyboard(turi_list)
+            send_message(cid, "<b>Quyidagilardan birini tanlang:</b>", reply_markup={"inline_keyboard": pay_kb})
+        return
+
+    if text == "📊 Statistika" and is_admin:
+        obsh = user_id_file.count("\n") + 1
+        send_message(cid, "<b>🚀 Bot tezligi:</b> <code>~fast m/s</code>\n\n👥 <b>Foydalanuvchilar:</b> {} ta".format(obsh))
+        return
+
+    if text == "📢 Kanallar" and is_admin:
+        send_message(cid, "<b>⤵ Quyidagilardan birini tanlang:</b>",
+            reply_markup={"inline_keyboard": [
+                [{"text": "🔐 Majburiy obunalar", "callback_data": "majburiy"}],
+                [{"text": "🆕️ Promokod uchun", "callback_data": "promo"}],
+            ]})
+        return
+
+    if text == "✉ Xabarnoma" and is_admin:
+        send_message(cid, "<b>Yuboriladigan xabar turini tanlang;</b>",
+            reply_markup={"inline_keyboard": [
+                [{"text": "Oddiy xabar", "callback_data": "send"}],
+                [{"text": "Forward xabar", "callback_data": "forsend"}],
+            ]})
+        return
+
+    if text == "🛍 Xizmatlar" and is_admin:
+        send_message(cid, "<b>Quyidagilardan birini tanlang:</b>",
+            reply_markup={"inline_keyboard": [
+                [{"text": "📂 Bo'limlarni sozlash", "callback_data": "bolim"}],
+                [{"text": "📂 Ichki bo'lim sozlash", "callback_data": "ichki"}],
+                [{"text": "🛍 Xizmatlarni sozlash", "callback_data": "xizmat"}],
+                [{"text": "🗑 Barchasini tozalash", "callback_data": "toza"}],
+            ]})
+        return
+
+    if text == "*️⃣ Birlamchi sozlamalar" and is_admin:
+        send_message(cid,
+            "<b>*️⃣ Birlamchi sozlamalar bo'limidasiz.</b>\n\n<i>1. Valyuta - {}\n2. Chegirma narxi - {} {}\n3. Referal narxi - {} {}\n4. Pul o'tkazish narxi: {} {}\n5. Free Card narxi: {} {}</i>".format(
+                valyuta, int(narx), valyuta, int(taklifpul), valyuta, int(transfer), valyuta, int(card), valyuta),
+            reply_markup={"inline_keyboard": [
+                [{"text": "💶 Valyuta", "callback_data": "valyuta"}],
+                [{"text": "🛍 Chegirma narxi", "callback_data": "chegirma_narx"}],
+                [{"text": "💸 Referal narxi", "callback_data": "ref_narx"}],
+                [{"text": "🔁 O'tkazma narxi", "callback_data": "transfer"}],
+                [{"text": "🎫 Free Card narxi", "callback_data": "freecard_narxi"}],
+            ]})
+        return
+
+    if text == "🔎 Foydalanuvchini boshqarish" and is_admin:
+        send_message(cid, "<b>👤 Foydalanuvchini ID raqamini yuboring:</b>", reply_markup=boshqarish_kb)
+        put_file("step/{}.step".format(cid), "iD")
+        return
+
+    if text == "🎟 Promokod" and is_admin:
+        if promo:
+            send_message(cid, "<b>Promokod uchun nom yuboring:</b>", reply_markup=boshqarish_kb)
+            put_file("step/{}.step".format(cid), "pro")
+        else:
+            send_message(cid, "<b>Promokod yuboriladigan kanal ulanmagan!</b>")
+        return
+
+    if text == "🛠 Foiz sozlamalari" and is_admin:
+        cur_kurs = get_file("admin/kurs.txt", "1")
+        cur_foiz = get_file("admin/foiz.txt", "10")
+        cur_foiz2 = get_file("admin/foiz2.txt", "5")
+        send_message(cid,
+            "<i>«🛠 Foiz sozlamalari»</i> <b>bo'limiga xush kelibsiz.\n\n👁 Hozirgi holatlar:</b>\n<blockquote><i>💲 Kursni narxi – {} {}\n🔰 Xizmatlar foizi – {}\n🛍 Chegirma foizi – {}</i></blockquote>".format(
+                cur_kurs, valyuta, cur_foiz, cur_foiz2),
+            reply_markup={"inline_keyboard": [
+                [{"text": "💲 Kursni sozlash", "callback_data": "kurs_soz"}],
+                [{"text": "🔰 Xizmatlar foizni sozlash", "callback_data": "foiz_soz"}],
+                [{"text": "🛍 Chegirma foizini sozlash", "callback_data": "discount_soz"}],
+            ]})
+        return
+
+    if text == "🕹 Tugmalar" and is_admin:
+        k1 = get_file("tugma/key1.txt", "🚀 Buyurtma berish")
+        k2 = get_file("tugma/key2.txt", "📊 Buyurtmalarim")
+        k3 = get_file("tugma/key3.txt", "🗣 Referallar")
+        k4 = get_file("tugma/key4.txt", "💵 Hisobim")
+        k5 = get_file("tugma/key5.txt", "💰 Hisob to'ldirish")
+        k6 = get_file("tugma/key6.txt", "☎ Murojaat")
+        k7 = get_file("tugma/key7.txt", "📚 Yordam")
+        send_message(cid, "<b>✍ Tugmalarni nomini o'zgartirish uchun pastdagi menyulardan birini tanlang:</b>",
+            reply_markup={"inline_keyboard": [
+                [{"text": k1, "callback_data": "tugmath-key1"}],
+                [{"text": k2, "callback_data": "tugmath-key2"}, {"text": k4, "callback_data": "tugmath-key4"}],
+                [{"text": k3, "callback_data": "tugmath-key3"}, {"text": k5, "callback_data": "tugmath-key5"}],
+                [{"text": k7, "callback_data": "tugmath-key7"}, {"text": k6, "callback_data": "tugmath-key6"}],
+                [{"text": "⚠️ Tugmalarni oldingi holiga qaytarish", "callback_data": "reset"}],
+            ]})
+        return
+
+    if text == "/start promokod":
+        send_message(cid, "<b>🎟 Promokod nomini yuboring.✅</b>\n\n<blockquote><i>📲 Kodlarni: {} kanalidan topishingiz mumkin.⚡️</i></blockquote>".format(promo),
+            reply_markup=back)
+        put_file("step/{}.step".format(cid), "promo")
+        return
+
+    if step == "iD" and is_admin:
+        if text == "🗄 Boshqarish":
+            unlink("step/{}.step".format(cid))
+            return
+        if file_exists("pul/{}.txt".format(text)):
+            put_file("step/alijonov.txt", text)
+            u_pul = get_file("pul/{}.txt".format(text), "0")
+            u_odam = get_file("odam/{}.dat".format(text), "0")
+            u_status = get_file("status/{}.txt".format(text), "Oddiy")
+            u_ban = get_file("ban/{}.txt".format(text), "")
+            u_by = get_file("pul/{}.nak".format(text), "0")
+            vip_text = "✅ Chegirma berish" if u_status != "VIP" else "❌ Chegirmadan olish"
+            ban_text = "🔔 Banlash" if u_ban != "ban" else "🔕 Bandan olish"
+            send_message(cid,
+                "<b>✅ Foydalanuvchi topildi!</b>\n\n<blockquote><b>👤 UID Raqami:</b> <a href='tg://user?id={}'>{}</a>\n<b>💸 Jami hisobi:</b> {} {}\n<b>📊 Jami buyurtmalari:</b> {} ta\n<b>🔗 Takliflar soni:</b> {} ta</blockquote>".format(
+                    text, text, u_pul, valyuta, u_by, u_odam),
+                reply_markup={"inline_keyboard": [
+                    [{"text": ban_text, "callback_data": "ban"}],
+                    [{"text": "➕ Pul qo'shish", "callback_data": "plus"}, {"text": "➖ Pul ayirish", "callback_data": "minus"}],
+                    [{"text": vip_text, "callback_data": "add_vip"}],
+                ]})
+            unlink("step/{}.step".format(cid))
+        else:
+            send_message(cid, "<b>‼ Foydalanuvchi topilmadi.\n\nQayta urinib ko'ring:</b>")
+        return
+
+    if step == "plus" and is_admin:
+        if text == "🗄 Boshqarish":
+            unlink("step/{}.step".format(cid))
+            return
+        if text.isdigit() or text.replace(".", "", 1).isdigit():
+            u_pul = float(get_file("pul/{}.txt".format(saved), "0") or 0)
+            put_file("pul/{}.txt".format(saved), str(u_pul + float(text)))
+            u_opl = float(get_file("oplata/{}.txt".format(saved), "0") or 0)
+            put_file("oplata/{}.txt".format(saved), str(u_opl + float(text)))
+            send_message(saved, "<b>👨‍💻 Adminlar tomonidan hisobingizga {} {} qo'shildi.✅</b>".format(text, valyuta), reply_markup=menu)
+            send_message(cid, "<b>Foydalanuvchi hisobiga {} {} qo'shildi!</b>".format(text, valyuta), reply_markup=panel)
+            unlink("step/alijonov.txt")
+            unlink("step/{}.step".format(cid))
+        else:
+            send_message(cid, "<b>Faqat raqamlardan foydalaning!</b>")
+        return
+
+    if step == "minus" and is_admin:
+        if text == "🗄 Boshqarish":
+            unlink("step/{}.step".format(cid))
+            return
+        if text.isdigit() or text.replace(".", "", 1).isdigit():
+            u_pul = float(get_file("pul/{}.txt".format(saved), "0") or 0)
+            put_file("pul/{}.txt".format(saved), str(u_pul - float(text)))
+            send_message(saved, "<b>‼ Adminlar tomonidan hisobingizdan {} {} olib tashlandi.✅</b>".format(text, valyuta), reply_markup=menu)
+            send_message(cid, "<b>Foydalanuvchi hisobidan {} {} olib tashlandi!</b>".format(text, valyuta), reply_markup=panel)
+            unlink("step/alijonov.txt")
+            unlink("step/{}.step".format(cid))
+        else:
+            send_message(cid, "<b>Faqat raqamlardan foydalaning!</b>")
+        return
+
+    if step == "add-admin" and cid == ADMIN_ID:
+        if text == "🗄 Boshqarish":
+            unlink("step/{}.step".format(cid))
+            return
+        if text.isdigit() and text != ADMIN_ID:
+            cur_admins = get_file("admin/admins.txt", "")
+            put_file("admin/admins.txt", cur_admins + "\n" + text)
+            send_message(cid, "✅ *{}* endi botda admin".format(text), parse_mode="MarkDown", reply_markup=panel)
+            unlink("step/{}.step".format(cid))
+        else:
+            send_message(cid, "<b>Kerakli iD raqamni kiriting:</b>")
+        return
+
+    if step == "remove-admin" and cid == ADMIN_ID:
+        if text == "🗄 Boshqarish":
+            unlink("step/{}.step".format(cid))
+            return
+        if text.isdigit() and text != ADMIN_ID:
+            cur_admins = get_file("admin/admins.txt", "")
+            new_admins = cur_admins.replace("\n" + text, "").replace(text + "\n", "")
+            put_file("admin/admins.txt", new_admins)
+            send_message(cid, "✅ *{}* endi botda admin emas".format(text), parse_mode="MarkDown", reply_markup=panel)
+            unlink("step/{}.step".format(cid))
+        else:
+            send_message(cid, "<b>Kerakli iD raqamni kiriting:</b>")
+        return
+
+    if step == "pro" and is_admin:
+        if text == "🗄 Boshqarish":
+            unlink("step/{}.step".format(cid))
+            return
+        put_file("step/kod.txt", text)
+        send_message(cid, "<b>Qabul qilindi.\n\nEndi esa, promokod qiymatini yuboring:</b>")
+        put_file("step/{}.step".format(cid), "Next_Promo")
+        return
+
+    if step == "Next_Promo" and is_admin:
+        if text == "🗄 Boshqarish":
+            unlink("step/{}.step".format(cid))
+            return
+        if text.isdigit():
+            put_file("step/money.txt", text)
+            kod = get_file("step/kod.txt", "").strip()
+            send_message(cid, "<b>Promokod {} kanaliga yuborildi!</b>".format(promo), reply_markup=panel)
+            r = send_photo(promo,
+                "https://t.me/BotUchunAvatarka/78",
+                "<b>😱 Yangi Promokod 👇\n\n📲 Promokod nomi:</b> <code>{}</code>\n<b>💰 Promokod narxi: <u>{} {}</u></b>\n\n🗞 <code>{}</code>".format(kod, text, valyuta, sana),
+                reply_markup={"inline_keyboard": [[{"text": "🚀 Promokodni ishlatish", "url": "https://t.me/{}?start=promokod".format(get_bot_username())}]]}
+            )
+            try:
+                msg_id = r.get("result", {}).get("message_id", 0)
+                put_file("step/mid.txt", str(msg_id))
+            except Exception:
+                pass
+            unlink("step/{}.step".format(cid))
+        else:
+            send_message(cid, "<b>Faqat raqamlardan foydalaning!</b>")
+        return
+
+    if step == "promo":
+        if text == "🔙 Orqaga":
+            unlink("step/{}.step".format(cid))
+            return
+        kod = get_file("step/kod.txt", "").strip()
+        money = get_file("step/money.txt", "0").strip()
+        if text == kod and kod:
+            new_pul = pul + float(money)
+            put_file("pul/{}.txt".format(cid), str(new_pul))
+            send_message(cid, "🎟 <b>Promokodni to'g'ri yubordingiz va hisobingizga {} {} qo'shildi ✅</b>".format(money, valyuta), reply_markup=menu)
+            unlink("step/{}.step".format(cid))
+            promo_ch = get_file("admin/kanal2.txt", "").strip()
+            post_mid = get_file("step/mid.txt", "").strip()
+            if promo_ch and post_mid:
+                edit_message_caption(promo_ch, post_mid,
+                    "<b><u>🏷 Promokod muvaffaqiyatli ishlatildi.✅</u></b>\n\n👤 - <a href='tg://user?id={}'>{}</a>\n➕ {} {} (balans)\n\n🗞 <code>{}</code>".format(
+                        cid, name, money, valyuta, sana),
+                    reply_markup={"inline_keyboard": [[{"text": "🤖 Bizning botimiz", "url": "https://t.me/{}".format(get_bot_username())}]]}
+                )
+            unlink("step/money.txt")
+            unlink("step/kod.txt")
+        else:
+            send_message(cid, "<b>⚠️ Bunday Promokod mavjud emas.✅</b>")
+        return
+
+    if step == "murojaat":
+        send_message(cid, "<b>✅ Murojaatingiz qabul qilindi va bot administratoriga yuborildi.🔥\n<i>Uzog'i 24 soat ichida sizga javob qaytarishadi!</i></b>", reply_markup=menu)
+        admin_ids = get_admin_ids()
+        for adm in admin_ids:
+            send_message(adm,
+                "<b>📨 Yangi murojaat keldi.👇\n\n✍ Matni:</b> <blockquote><i>{}</i></blockquote>\n<b>🆔 Raqami:</b> <code>{}</code>\n<b>🔗 Useri: @{}</b>\n<b>👤 Nomi:</b> {}\n<b>⏳ Vaqti:</b> {}".format(
+                    text, cid, username, name, sana),
+                reply_markup={"inline_keyboard": [[{"text": "🔰 Javob yozish", "callback_data": "javob-{}-msg".format(cid)}]]}
+            )
+        unlink("step/{}.step".format(cid))
+        return
+
+    if step.startswith("javob_ketdi-"):
+        parts = step.split("-")
+        target_id = parts[1] if len(parts) > 1 else ""
+        send_message(cid, "<b>✅ Yuborildi!</b>", reply_markup=menu)
+        send_message(target_id,
+            "<b>☎️ Administratordan javob keldi:</b>\n\n<blockquote><i>{}</i></blockquote>\n\n<b>🔁 Yana murojaat yo'llashni istasangiz pastdagi tugmalardan birini tanlang!</b>".format(text),
+            reply_markup={"inline_keyboard": [[{"text": "✍ Murojaat qilish", "callback_data": "murojaat_qilish"}]]}
+        )
+        unlink("step/{}.step".format(cid))
+        return
+
+    if step == "almashish":
+        if text == "🔙 Orqaga":
+            unlink("step/{}.step".format(cid))
+            return
+        if text.isdigit():
+            amount = float(text)
+            if amount >= transfer:
+                if pul >= amount:
+                    put_file("step/alijonov.txt", text)
+                    send_message(cid, "<b>🆔 Endi o'zkazmoqchi bo'lgan foydalanuvchining ID raqamini yuboring.✅</b>")
+                    put_file("step/{}.step".format(cid), "tran")
+                else:
+                    send_message(cid, "<b>‼ Hisobingizda mablag' yetarli emas.✅</b>")
+            else:
+                send_message(cid, "<b>⛔ Minimal o'tkazma miqdori:</b> <u>{} {}</u>".format(int(transfer), valyuta))
+        else:
+            send_message(cid, "<b>⚠ Faqat raqamlardan foydalaning!</b>")
+        return
+
+    if step == "tran":
+        if text == "🔙 Orqaga":
+            unlink("step/{}.step".format(cid))
+            unlink("step/alijonov.txt")
+            return
+        if file_exists("pul/{}.txt".format(text)):
+            amount = float(saved or 0)
+            cur = float(get_file("pul/{}.txt".format(cid), "0") or 0)
+            put_file("pul/{}.txt".format(cid), str(cur - amount))
+            other = float(get_file("pul/{}.txt".format(text), "0") or 0)
+            put_file("pul/{}.txt".format(text), str(other + amount))
+            send_message(text, "📳 <a href='tg://user?id={}'>{}</a><b> tomonidan hisobingizga {} {} o'tkazdi.✅</b>".format(uid, uid, int(amount), valyuta), disable_web_page_preview=True)
+            send_message(cid, "<b>✅</b> <a href='tg://user?id={}'>Foydalanuvchiga</a><b> {} {} o'tkazildi.✅</b>".format(text, int(amount), valyuta), reply_markup=menu)
+            unlink("step/{}.step".format(cid))
+            unlink("step/alijonov.txt")
+        else:
+            send_message(cid, "<b>🤷🏻‍♂ Foydalanuvchi ID raqami topilmadi!</b>")
+        return
+
+    if step == "bytop":
+        if text == "🔙 Orqaga":
+            unlink("step/{}.step".format(cid))
+            return
+        if text.isdigit():
+            order_txt = get_file("buyurtma/{}/order.txt".format(text), "").strip()
+            byid_txt = get_file("buyurtma/{}/miqdor.txt".format(text), "0").strip()
+            if order_txt:
+                try:
+                    r = requests.get("{}?key={}&action=status&order={}".format(sayt, api, order_txt), timeout=10).json()
+                    xolati = r.get("status", "")
+                    miqdor = r.get("remains", 0)
+                    status_map = {
+                        "Pending": "🔂 Kutilmoqda...",
+                        "In progress": "🔄 Bajarilmoqda...",
+                        "Completed": "✅ Bajarildi",
+                        "Partial": "✔️ Qisman bajarildi",
+                        "Processing": "♻️ Qayta ishlash",
+                        "Canceled": "⛔ Bekor qilingan"
+                    }
+                    byxol = status_map.get(xolati, xolati)
+                    send_message(cid,
+                        "<b>🔎 Buyurtma haqida ma'lumotlar!</b>\n\n<blockquote><b>🆔 Buyurtma ID Raqami</b> {}\n<b>👁 Buyurtma holati:</b> {}\n<b>💸 Xizmat narxi:</b> {} {}\n<b>🛍 Buyurtma miqdori:</b> {} ta\n<b>👤 Buyurtmachi: @{}</b></blockquote>".format(
+                            text, byxol, byid_txt, valyuta, miqdor, username))
+                    unlink("step/{}.step".format(cid))
+                except Exception:
+                    send_message(cid, "<b>⚠️ API bilan bog'lanishda xatolik!</b>")
+            else:
+                send_message(cid, "<b>⚠️ Siz jo'natgan ID raqam bo'yicha buyurtma haqida topilmadi!</b>")
+        else:
+            send_message(cid, "<b>⚠️ Faqat raqamlardan foydalaning!</b>")
+        return
+
+    if step == "oddiy" and is_admin:
+        if text == "🗄 Boshqarish":
+            unlink("step/{}.step".format(cid))
+            return
+        users = [u.strip() for u in user_id_file.split("\n") if u.strip()]
+        count = len(users)
+        send_message(cid, "<b>{} ta foydalanuvchiga xabar yuborish boshlandi!</b>".format(count), reply_markup=panel)
+        for u in users:
+            try:
+                send_message(u, text)
+            except Exception:
+                pass
+        unlink("step/{}.step".format(cid))
+        send_message(cid, "<b>{} ta foydalanuvchiga muvaffaqiyatli yuborildi</b>".format(count))
+        return
+
+    if step == "forward" and is_admin:
+        if text == "🗄 Boshqarish":
+            unlink("step/{}.step".format(cid))
+            return
+        users = [u.strip() for u in user_id_file.split("\n") if u.strip()]
+        count = len(users)
+        send_message(cid, "<b>{} ta foydalanuvchiga xabar yuborish boshlandi!</b>".format(count), reply_markup=panel)
+        for u in users:
+            try:
+                forward_message(cid, u, mid)
+            except Exception:
+                pass
+        unlink("step/{}.step".format(cid))
+        send_message(cid, "<b>{} ta foydalanuvchiga muvaffaqiyatli yuborildi</b>".format(count))
+        return
+
+    if step.startswith("oplata-"):
+        parts = step.split("-")
+        tur = parts[1] if len(parts) > 1 else ""
+        if text == "🔙 Orqaga":
+            unlink("step/{}.step".format(cid))
+            return
+        if text.isdigit():
+            send_message(cid, "<b>📃 To'lov chekini rasmini yuboring</b>")
+            put_file("step/{}.step".format(cid), "rasm-{}-{}".format(text, tur))
+        else:
+            send_message(cid, "💵 <b>To'lov miqdorini kiriting:</b>")
+        return
+
+    if step.startswith("rasm-"):
+        parts = step.split("-")
+        miqdor = parts[1] if len(parts) > 1 else ""
+        tur = parts[2] if len(parts) > 2 else ""
+        if text == "🔙 Orqaga":
+            unlink("step/{}.step".format(cid))
+            return
+        forward_message(cid, ADMIN_ID, mid)
+        send_message(ADMIN_ID,
+            "<b>⏳ Foydalanuvchi hisobini to'ldirmoqchi!</b>\n\n<b>💳 To'lov tizimi:</b> {}\n<b>👤 Foydalanuvchi:</b> <a href='tg://user?id={}'>{}</a>\n<b>💰 To'lov miqdori:</b> {} {}\n<b>⏰ Sana:</b> {}".format(
+                tur, cid, cid, miqdor, valyuta, sana),
+            disable_web_page_preview=True,
+            reply_markup={"inline_keyboard": [[
+                {"text": "✅", "callback_data": "on-{}-{}".format(cid, miqdor)},
+                {"text": "❌", "callback_data": "off-{}-{}".format(cid, miqdor)}
+            ]]}
+        )
+        send_message(cid, "<b>✅ To'lov qabul qilindi hamda bot tomonidan tekshirilishini kuting!</b>", reply_markup=menu)
+        unlink("step/{}.step".format(cid))
+        return
+
+    if step.startswith("by-"):
+        parts = step.split("-")
+        s_narx = parts[1] if len(parts) > 1 else "0"
+        s_min = parts[2] if len(parts) > 2 else "0"
+        s_max = parts[3] if len(parts) > 3 else "0"
+        s_id = parts[4] if len(parts) > 4 else ""
+        s_xizmat = parts[5] if len(parts) > 5 else ""
+        s_bolim = parts[6] if len(parts) > 6 else ""
+        if text == "🔙 Orqaga":
+            unlink("step/{}.step".format(cid))
+            return
+        if text.isdigit():
+            amount = int(text)
+            mn = int(s_min) if s_min.isdigit() else 0
+            mx = int(s_max) if s_max.isdigit() else 0
+            if mn <= amount <= mx:
+                umumiy = float(s_narx) / 1000 if s_narx.replace(".", "").isdigit() else 0
+                miqdor_cost = amount * umumiy
+                if pul >= miqdor_cost:
+                    put_file("step/{}.son".format(cid), str(amount))
+                    send_message(cid,
+                        "<b>{} - {}\n\nMarhamat havolani yuboring\nNamuna: https://t.me/username</b>".format(s_xizmat, s_bolim),
+                        disable_web_page_preview=True)
+                    put_file("step/{}.step".format(cid), "buy-{}-{}-{}-{}-{}".format(s_narx, s_min, s_max, s_id, s_bolim))
+                else:
+                    send_message(cid, "<b>❌ {} ta buyurtma uchun yetarli mablag' mavjud emas.\n💵 Narxi: {} {}</b>".format(amount, s_narx, valyuta))
+            else:
+                send_message(cid, "<b>⚠️ Buyurtma miqdori {}-{} oralig'ida bo'lishi kerak!</b>".format(mn, mx))
+        else:
+            send_message(cid, "<b>⚠️ Faqat raqamlardan foydalaning!</b>")
+        return
+
+    if step.startswith("buy-"):
+        parts = step.split("-")
+        b_narx = parts[1] if len(parts) > 1 else "0"
+        b_min = parts[2] if len(parts) > 2 else "0"
+        b_max = parts[3] if len(parts) > 3 else "0"
+        b_id = parts[4] if len(parts) > 4 else ""
+        b_bolim = parts[5] if len(parts) > 5 else ""
+        if text == "🔙 Orqaga":
+            unlink("step/{}.step".format(cid))
+            return
+        if "https://" in text:
+            put_file("step/{}.url".format(cid), text)
+            son = get_file("step/{}.son".format(cid), "0").strip()
+            xiz = get_file("step/{}.xiz".format(cid), "").strip()
+            umumiy = float(b_narx) / 1000 if b_narx.replace(".", "").isdigit() else 0
+            miqdor_cost = int(son) * umumiy
+            send_message(cid,
+                "<b>{} - {}</b>\n\n📎 Havola: <b>{}</b>\n💵 Narxi: <b>{}</b> {}\n🧮 Soni: <b>{}</b> ta\n\n<i>— Ma'lumotlar to'g'ri bo'lsa (✅ To'g'ri) tugmasiga bosing!</i>".format(
+                    xiz, b_bolim, text, round(miqdor_cost, 2), valyuta, son),
+                disable_web_page_preview=True,
+                reply_markup={"inline_keyboard": [
+                    [{"text": "✅ To'g'ri", "callback_data": "byber-{}-{}-{}".format(round(miqdor_cost, 2), son, b_id)}],
+                    [{"text": "🚫 No to'g'ri", "callback_data": "orqaga"}],
+                ]}
+            )
+            unlink("step/{}.step".format(cid))
+        else:
+            send_message(cid, "<b>⚠️ Havola notog'ri yuborilmoqda\n\nQaytadan xarakat qiling!</b>")
+        return
+
+    if step == "turi" and is_admin:
+        if text == "🗄 Boshqarish":
+            unlink("step/{}.step".format(cid))
+            return
+        mkdir_safe("tizim/{}".format(text))
+        cur_turi = get_file("tizim/turi.txt", "")
+        put_file("tizim/turi.txt", cur_turi + "\n" + text)
+        put_file("step/test.txt", text)
+        send_message(cid, "<b>Ushbu to'lov tizimidagi hamyoningiz raqamini yuboring:</b>")
+        put_file("step/{}.step".format(cid), "wallet")
+        return
+
+    if step == "wallet" and is_admin:
+        if text == "🗄 Boshqarish":
+            unlink("step/{}.step".format(cid))
+            return
+        if text.isdigit():
+            cur_wallet = get_file("tizim/{}/wallet.txt".format(test), "")
+            put_file("tizim/{}/wallet.txt".format(test), cur_wallet + "\n" + text)
+            send_message(cid, "<b>Karta raqam egasini yuboring</b>\n<i>Masalan: Ism Familiya</i>")
+            put_file("step/{}.step".format(cid), "addition")
+        else:
+            send_message(cid, "<b>Faqat raqamlardan foydalaning!</b>")
+        return
+
+    if step == "addition" and is_admin:
+        if text:
+            cur_add = get_file("tizim/{}/addition.txt".format(test), "")
+            put_file("tizim/{}/addition.txt".format(test), cur_add + "\n" + text)
+            send_message(cid, "<b>Yangi to'lov tizimi qo'shildi!</b>", reply_markup=asosiy)
+            unlink("step/{}.step".format(cid))
+            unlink("step/test.txt")
+        return
+
+    if step == "manzil":
+        if "api/v" in text.lower():
+            put_file("admin/sayt.txt", text)
+            send_message(cid, "<b>{} dan olingan API kalitni yuboring:</b>".format(text))
+            put_file("step/{}.step".format(cid), "api-{}".format(text))
+        else:
+            send_message(cid, "<b>Namuna:</b> <code>https://gramapi.uz/api/v2</code>")
+        return
+
+    if step.startswith("api-"):
+        if text == "🗄 Boshqarish":
+            unlink("step/{}.step".format(cid))
+            return
+        cur_sayt = get_file("admin/sayt.txt", "").strip()
+        try:
+            bl = requests.get("{}?key={}&action=balance".format(cur_sayt, text), timeout=10).json()
+            if bl.get("balance") is None:
+                send_message(cid, "<b>{} dan olingan API kalitni yuboring:</b>".format(cur_sayt))
+            else:
+                put_file("admin/api.txt", text)
+                send_message(cid, "<b>API kalit qabul qilindi!\n\nAPI balans:</b> {} {}".format(bl.get("balance"), bl.get("currency", "")), reply_markup=asosiy)
+                unlink("step/{}.step".format(cid))
+        except Exception:
+            send_message(cid, "<b>API bilan bog'lanishda xatolik!</b>")
+        return
+
+    if step == "newFol" and is_admin:
+        if text == "🗄 Boshqarish":
+            unlink("step/{}.step".format(cid))
+            return
+        mkdir_safe("nakrutka/{}".format(text))
+        if not file_exists("nakrutka/{}/narxi.txt".format(text)):
+            put_file("nakrutka/{}/narxi.txt".format(text), "Tekin")
+        if not file_exists("nakrutka/{}/ichki.txt".format(text)):
+            put_file("nakrutka/{}/ichki.txt".format(text), "")
+        cur_bolim = get_file("nakrutka/bolim.txt", "")
+        put_file("nakrutka/bolim.txt", cur_bolim + "\n" + text)
+        send_message(cid, "<b>{}</b> - nomli bo'lim qo'shildi!".format(text), reply_markup=panel)
+        unlink("step/{}.step".format(cid))
+        return
+
+    if step == "newFold" and is_admin:
+        if text == "🗄 Boshqarish":
+            unlink("step/{}.step".format(cid))
+            return
+        mkdir_safe("nakrutka/{}/{}".format(test, text))
+        cur_ichki = get_file("nakrutka/{}/ichki.txt".format(test), "")
+        put_file("nakrutka/{}/ichki.txt".format(test), cur_ichki + "\n" + text)
+        send_message(cid, "<b>{}</b> - nomli ichki bo'lim qo'shildi!".format(text), reply_markup=panel)
+        unlink("step/{}.step".format(cid))
+        return
+
+    if step == "ServisID" and is_admin:
+        if text == "🗄 Boshqarish":
+            unlink("step/{}.step".format(cid))
+            return
+        if len(text) <= 28:
+            mkdir_safe("nakrutka/{}/{}/{}".format(test, test1, text))
+            cur_xiz = get_file("nakrutka/{}/{}/xizmat.txt".format(test, test1), "")
+            put_file("nakrutka/{}/{}/xizmat.txt".format(test, test1), cur_xiz + "\n" + text)
+            put_file("step/test2.txt", text)
+            put_file("step/{}.step".format(cid), "1ta")
+            send_message(cid, "<b>{}</b> qabul qilindi. Endi esa, ushbu xizmatning Servis ID sini kiriting:".format(text))
+        else:
+            send_message(cid, "<b>Qabul qilinmadi, belgilar 28 tadan oshib ketdi!</b>\n\n<blockquote>Hozirgi matndagi belgilar soni {} ta</blockquote>\n\n<i>Qaytadan nomni qisqartirib yuboring!</i>".format(len(text)))
+        return
+
+    if step == "1ta" and is_admin:
+        if text == "🗄 Boshqarish":
+            unlink("step/{}.step".format(cid))
+            cur_xiz = get_file("nakrutka/{}/{}/xizmat.txt".format(test, test1), "")
+            new_xiz = cur_xiz.replace("\n" + test2, "")
+            put_file("nakrutka/{}/{}/xizmat.txt".format(test, test1), new_xiz)
+            delete_path("nakrutka/{}/{}/{}".format(test, test1, test2))
+            return
+        if text.isdigit():
+            put_file("nakrutka/{}/{}/{}/id.txt".format(test, test1, test2), text)
+            send_message(cid, "<b>Yangi xizmat muvaffaqiyatli qo'shildi!</b>", reply_markup=panel)
+        else:
+            send_message(cid, "<b>Faqat raqamlardan foydalaning!</b>")
+        return
+
+    if step == "kurs_soz":
+        if text == "🗄 Boshqarish":
+            unlink("step/{}.step".format(cid))
+            return
+        put_file("admin/kurs.txt", text)
+        send_message(cid, "<b>✅ Muvaffaqiyatli saqlandi!</b>", reply_markup=boshqarish_kb)
+        return
+
+    if step == "updFoiz":
+        if text == "🗄 Boshqarish":
+            unlink("step/{}.step".format(cid))
+            return
+        put_file("admin/foiz.txt", text)
+        send_message(cid, "<b>✅ Muvaffaqiyatli saqlandi!</b>", reply_markup=boshqarish_kb)
+        return
+
+    if step == "discount_soz":
+        if text == "🗄 Boshqarish":
+            unlink("step/{}.step".format(cid))
+            return
+        put_file("admin/foiz2.txt", text)
+        send_message(cid, "<b>✅ Muvaffaqiyatli saqlandi!</b>", reply_markup=boshqarish_kb)
+        return
+
+    if step == "valyuta" and is_admin:
+        if text == "🗄 Boshqarish":
+            unlink("step/{}.step".format(cid))
+            return
+        put_file("admin/valyuta.txt", text)
+        send_message(cid, "<b>Muvaffaqiyatli o'zgartirildi!</b>", reply_markup=asosiy)
+        unlink("step/{}.step".format(cid))
+        return
+
+    if step == "taklif" and is_admin:
+        if text == "🗄 Boshqarish":
+            unlink("step/{}.step".format(cid))
+            return
+        put_file("admin/referal.txt", text)
+        send_message(cid, "<b>Muvaffaqiyatli o'zgartirildi!</b>", reply_markup=asosiy)
+        unlink("step/{}.step".format(cid))
+        return
+
+    if step == "vnarx" and is_admin:
+        if text == "🗄 Boshqarish":
+            unlink("step/{}.step".format(cid))
+            return
+        put_file("admin/vip.txt", text)
+        send_message(cid, "<b>Muvaffaqiyatli o'zgartirildi!</b>", reply_markup=asosiy)
+        unlink("step/{}.step".format(cid))
+        return
+
+    if step == "transfer" and is_admin:
+        if text == "🗄 Boshqarish":
+            unlink("step/{}.step".format(cid))
+            return
+        put_file("admin/transfer.txt", text)
+        send_message(cid, "<b>Muvaffaqiyatli o'zgartirildi!</b>", reply_markup=asosiy)
+        unlink("step/{}.step".format(cid))
+        return
+
+    if step == "freecard_narxi" and is_admin:
+        if text == "🗄 Boshqarish":
+            unlink("step/{}.step".format(cid))
+            return
+        put_file("admin/card.txt", text)
+        send_message(cid, "<b>Muvaffaqiyatli o'zgartirildi!</b>", reply_markup=asosiy)
+        unlink("step/{}.step".format(cid))
+        return
+
+    if step.startswith("tugmath-"):
+        if text == "🗄 Boshqarish":
+            unlink("step/{}.step".format(cid))
+            return
+        if is_admin:
+            ex = step.split("-")[1]
+            put_file("tugma/{}.txt".format(ex), text)
+            send_message(cid, "<b>Muvaffaqiyatli o'zgartirildi.</b>", reply_markup=panel)
+            unlink("step/{}.step".format(cid))
+        return
+
+    if step == "qo'shish" and is_admin:
+        if text == "🗄 Boshqarish":
+            unlink("step/{}.step".format(cid))
+            return
+        if "@" in text:
+            cur_kanal = get_file("admin/kanal.txt", "")
+            if not cur_kanal:
+                put_file("admin/kanal.txt", text)
+            else:
+                put_file("admin/kanal.txt", cur_kanal + "\n" + text)
+            send_message(cid, "<b>{} - kanal qo'shildi!</b>".format(text), reply_markup=panel)
+            unlink("step/{}.step".format(cid))
+        else:
+            send_message(cid, "<b>Qayta urunib ko'ring:</b>")
+        return
+
+    if step == "promokod" and is_admin:
+        if text == "🗄 Boshqarish":
+            unlink("step/{}.step".format(cid))
+            return
+        if "@" in text:
+            try:
+                chat_info = get_chat(text)
+                ch_user = chat_info.get("result", {}).get("username", "")
+                adm_check = requests.get("https://api.telegram.org/bot{}/getChatAdministrators?chat_id=@{}".format(API_KEY, ch_user), timeout=10).json()
+                if adm_check.get("ok"):
+                    put_file("admin/kanal2.txt", "@" + ch_user)
+                    send_message(cid, "<b>{} - kanal saqlandi!</b>".format(text), reply_markup=panel)
+                    unlink("step/{}.step".format(cid))
+                else:
+                    send_message(cid, "<b>Bot ushbu kanalda admin emas!</b>")
+            except Exception:
+                send_message(cid, "<b>Xatolik yuz berdi!</b>")
+        else:
+            send_message(cid, "⚠️ <b>Kanal manzili kiritishda xatolik!\n\nQayta urinib ko'ring:</b>")
+        return
+
+    if step.startswith("editFol-"):
+        if text == "🗄 Boshqarish":
+            unlink("step/{}.step".format(cid))
+            return
+        if is_admin:
+            ex = step.split("-")[1]
+            bolim_txt = get_file("nakrutka/bolim.txt", "")
+            new_bolim = bolim_txt.replace(ex, text)
+            put_file("nakrutka/bolim.txt", new_bolim)
+            try:
+                os.rename("nakrutka/{}".format(ex), "nakrutka/{}".format(text))
+            except Exception:
+                pass
+            send_message(cid, "<b>Muvaffaqiyatli o'zgartirildi.</b>", reply_markup=panel)
+            unlink("step/{}.step".format(cid))
+        return
+
+    if step.startswith("editFoldms-"):
+        if text == "🗄 Boshqarish":
+            unlink("step/{}.step".format(cid))
+            return
+        if is_admin:
+            parts = step.split("-")
+            ex = parts[1]
+            s_bolim = parts[2] if len(parts) > 2 else ""
+            ichki_txt = get_file("nakrutka/{}/ichki.txt".format(s_bolim), "")
+            new_ichki = ichki_txt.replace(ex, text)
+            put_file("nakrutka/{}/ichki.txt".format(s_bolim), new_ichki)
+            try:
+                os.rename("nakrutka/{}/{}".format(s_bolim, ex), "nakrutka/{}/{}".format(s_bolim, text))
+            except Exception:
+                pass
+            send_message(cid, "<b>Muvaffaqiyatli o'zgartirildi.</b>", reply_markup=panel)
+            unlink("step/{}.step".format(cid))
+        return
+
+    if step.startswith("editNomi-"):
+        if text == "🗄 Boshqarish":
+            unlink("step/{}.step".format(cid))
+            return
+        if is_admin:
+            parts = step.split("-")
+            xiz = parts[1]
+            s_bolim = parts[2] if len(parts) > 2 else ""
+            s_ichki = parts[3] if len(parts) > 3 else ""
+            xizmat_txt = get_file("nakrutka/{}/{}/xizmat.txt".format(s_bolim, s_ichki), "")
+            new_xizmat = xizmat_txt.replace(xiz, text)
+            put_file("nakrutka/{}/{}/xizmat.txt".format(s_bolim, s_ichki), new_xizmat)
+            try:
+                os.rename("nakrutka/{}/{}/{}".format(s_bolim, s_ichki, xiz), "nakrutka/{}/{}/{}".format(s_bolim, s_ichki, text))
+            except Exception:
+                pass
+            send_message(cid, "<b>Muvaffaqiyatli o'zgartirildi.</b>", reply_markup=panel)
+            unlink("step/{}.step".format(cid))
+        return
+
+def build_payment_keyboard(turi_txt):
+    lines = [l.strip() for l in turi_txt.split("\n") if l.strip()]
+    keys = [[{"text": t, "callback_data": "pay-{}".format(t)}] for t in lines]
+    keys.append([{"text": "☎️ Admin orqali", "url": "tg://user?id={}".format(ADMIN_ID)}])
+    keys.append([{"text": "🔙 Orqaga", "callback_data": "orqaga"}])
+    return keys
+
+def build_delete_payment_keyboard(turi_txt):
+    lines = [l.strip() for l in turi_txt.split("\n") if l.strip()]
+    keys = [[{"text": "{} - o'chirish".format(t), "callback_data": "del-{}".format(t)}] for t in lines]
+    keys.append([{"text": "➕ Yangi to'lov tizimi qo'shish", "callback_data": "new"}])
+    return keys
+
+_bot_username_cache = None
+def get_bot_username():
+    global _bot_username_cache
+    if not _bot_username_cache:
+        try:
+            r = bot("getMe")
+            _bot_username_cache = r.get("result", {}).get("username", "")
+        except Exception:
+            _bot_username_cache = ""
+    return _bot_username_cache
+
+def process_callback(update):
+    callback = update.get("callback_query", {})
+    if not callback:
+        return
+
+    cid2 = str(callback.get("message", {}).get("chat", {}).get("id", ""))
+    mid2 = callback.get("message", {}).get("message_id", 0)
+    qid = callback.get("id", "")
+    data = callback.get("data", "")
+    callfrid = str(callback.get("from", {}).get("id", cid2))
+    callname = callback.get("from", {}).get("first_name", "")
+    calluser = callback.get("from", {}).get("username", "") or ""
+    surname = callback.get("from", {}).get("last_name", "") or ""
+
+    if not cid2:
+        return
+
+    admins = get_admin_ids()
+    holat = get_file("admin/holat.txt", "Yoqilgan").strip()
+    is_admin = callfrid in admins
+
+    if holat == "O'chirilgan" and not is_admin:
+        answer_callback(qid, "⛔️ Bot vaqtinchalik o'chirilgan!\n\nBotda ta'mirlash ishlari olib borilayotgan bo'lishi mumkin!", show_alert=True)
+        return
+
+    init_user(cid2)
+    add_user_to_base(callfrid)
+
+    valyuta = get_file("admin/valyuta.txt", "so'm").strip()
+    pul = float(get_file("pul/{}.txt".format(cid2), "0") or 0)
+    odam = int(get_file("odam/{}.dat".format(cid2), "0") or 0)
+    by_count = int(get_file("pul/{}.nak".format(cid2), "0") or 0)
+    oplata = float(get_file("oplata/{}.txt".format(cid2), "0") or 0)
+    status = get_file("status/{}.txt".format(cid2), "Oddiy").strip()
+    freecard = int(get_file("odam/{}.card".format(cid2), "0") or 0)
+    qoshilgan_vaqt = get_file("odam/{}.date".format(cid2), "")
+    transfer = float(get_file("admin/transfer.txt", "0") or 0)
+    taklifpul = float(get_file("admin/referal.txt", "100") or 100)
+    narx = float(get_file("admin/vip.txt", "15000") or 15000)
+    card = float(get_file("admin/card.txt", "100") or 100)
+    sayt = get_file("admin/sayt.txt", "").strip()
+    api = get_file("admin/api.txt", "").strip()
+    foiz = float(get_file("admin/foiz.txt", "10") or 10)
+    foiz2 = float(get_file("admin/foiz2.txt", "5") or 5)
+    kurs = float(get_file("admin/kurs.txt", "1") or 1)
+    saved = get_file("step/alijonov.txt", "").strip()
+    turi = get_file("tizim/turi.txt", "").strip()
+    user_id_file = get_file("azo.dat", "")
+    sana = datetime.now().strftime("%d.%m.%Y - %H:%M:%S")
+
+    menu_kb = get_menu_keyboard(is_admin)
+    panel_kb = get_panel_keyboard()
+    asosiy_kb = get_asosiy_keyboard()
+    back_kb = get_back_keyboard()
+    boshqarish_kb = get_boshqarish_keyboard()
+
+    step = get_file("step/{}.step".format(cid2), "").strip()
+
+    if data == "result":
+        delete_message(cid2, mid2)
+        if joinchat(cid2):
+            refid = get_file("step/{}.id".format(cid2), "").strip()
+            cid3 = get_file("step/{}.cid".format(cid2), "").strip()
+            welcome_text = "<b>🖐 Assalomu alaykum!\n\n🤖 Sizni bizning nakrutka botimizda ko'rishdan xursandmiz!</b>\n\n<i>📌 Eslatma: Botimiz xavfsiz va ishonchli.</i>"
+            if refid and refid != cid3:
+                send_message(cid2, welcome_text, reply_markup=menu_kb)
+            else:
+                if cid3:
+                    ref_pul = float(get_file("pul/{}.txt".format(cid3), "0") or 0)
+                    put_file("pul/{}.txt".format(cid3), str(ref_pul + taklifpul))
+                    ref_odam = int(get_file("odam/{}.dat".format(cid3), "0") or 0)
+                    put_file("odam/{}.dat".format(cid3), str(ref_odam + 1))
+                    send_message(cid2, welcome_text, reply_markup=menu_kb)
+                    send_message(cid3, "<b>💎 Do'stingiz botdan to'liq ro'yxatdan o'tganligi uchun sizga {} {} taqdim etildi!</b>".format(int(taklifpul), valyuta))
+                    unlink("step/{}.id".format(cid2))
+                    unlink("step/{}.cid".format(cid2))
+                else:
+                    send_message(cid2, welcome_text, reply_markup=menu_kb)
+        return
+
+    if data == "orqaga":
+        delete_message(cid2, mid2)
+        send_message(cid2, "<b>🖥 Asosiy menyudasiz</b>", reply_markup=menu_kb)
+        unlink("step/{}.txt".format(cid2))
+        return
+
+    if data == "bot_haqida":
+        delete_message(cid2, mid2)
+        send_message(cid2,
+            "<b>🤖 Bot Haqida:</b>\n\n<i>Bizning botimiz Telegram, Instagram, YouTube, va TikTok platformalarida buyurtma berish uchun mo'ljallangan.</i>",
+            reply_markup={"inline_keyboard": [[{"text": "🔙 Orqaga", "callback_data": "yordam"}]]})
+        return
+
+    if data == "bot_qoidalari":
+        delete_message(cid2, mid2)
+        rules = """<b>📄 Bot Qoidalari:</b>
+
+<i>1. Agar buyurtmangiz bekor qilinsa, mablag'ingiz hisobingizga qaytariladi.
+2. To'lov qilganingizdan so'ng, mablag' darhol hisobingizga tushadi.
+3. Botga kiritilgan mablag'lar qaytarilmaydi!
+4. Buyurtma haqida savollaringiz bo'lsa, administrator bilan bog'laning.
+5. Bir havolaga faqat bitta xizmat uchun buyurtma berish mumkin.
+10. Buyurtmalar faqat to'lov amalga oshirilgandan keyin tasdiqlanadi.</i>"""
+        send_message(cid2, rules, reply_markup={"inline_keyboard": [[{"text": "🔙 Orqaga", "callback_data": "yordam"}]]})
+        return
+
+    if data == "yordam":
+        delete_message(cid2, mid2)
+        send_message(cid2,
+            "<b>🤖 Bot Haqida</b> - Bot haqidagi barcha ma'lumotlarni ushbu bo'lim orqali olishingiz mumkin.\n\n<b>📄 Bot Qoidalari</b> - Botning ichki qoidalari haqida batafsil ma'lumot.",
+            reply_markup={"inline_keyboard": [
+                [{"text": "🤖 Bot Haqida", "callback_data": "bot_haqida"}],
+                [{"text": "📄 Bot Qoidalari", "callback_data": "bot_qoidalari"}],
+                [{"text": "🔙 Orqaga", "callback_data": "orqaga"}],
+            ]})
+        return
+
+    if data == "reyting":
+        answer_callback(qid, "⚠ Ushbu bo'limda ta'mirlash ishlari olib borilmoqda...", show_alert=True)
+        return
+
+    if data == "kabinet":
+        delete_message(cid2, mid2)
+        send_message(cid2,
+            "<b>👤 UID raqamingiz:</b> <code>{}</code>\n\n<b>💵 Balans:</b> {} {}\n<b>🎫 Free Card:</b> {} ta\n<b>💎 Daraja:</b> {}\n\n<b>📊 Buyurtmalar:</b> {} ta\n<b>🗣 Referallar:</b> {} ta\n<b>💰 Kiritilgan mablag':</b> {} {}\n<b>⏳ Qo'shilgan vaqtingiz:</b> {}".format(
+                cid2, int(pul), valyuta, freecard, status, by_count, odam, int(oplata), valyuta, qoshilgan_vaqt),
+            reply_markup={"inline_keyboard": [
+                [{"text": "💵 Hisob to'ldirish", "callback_data": "oplata"}, {"text": "🛍 Chegirma olish", "callback_data": "chegirmalar"}],
+                [{"text": "↗️ Pul o'tkazish", "callback_data": "almashish"}, {"text": "🎟️ Promokod", "callback_data": "promokod"}],
+                [{"text": "[🎫 Free Card] sotib olish", "callback_data": "freecard"}],
+            ]})
+        return
+
+    if data == "freecard":
+        edit_message_text(cid2, mid2,
+            "<b>🎫 Free Card narxi —</b> <i>{} {} (donasi)</i>\n\n<b><blockquote>‼ Ushbu karta orqali siz ba'zi pullik bo'limlardan mutlaqo tekinga foydalanish imkoniyatiga ega bo'lasiz.</blockquote></b>".format(int(card), valyuta),
+            reply_markup={"inline_keyboard": [
+                [{"text": "✅ Sotib olish", "callback_data": "card_shop"}],
+                [{"text": "🔙 Orqaga", "callback_data": "kabinet"}],
+            ]})
+        return
+
+    if data == "card_shop":
+        if pul >= card:
+            new_fc = freecard + 1
+            put_file("odam/{}.card".format(cid2), str(new_fc))
+            new_pul = pul - card
+            put_file("pul/{}.txt".format(cid2), str(new_pul))
+            edit_message_text(cid2, mid2,
+                "<b>🎫 Free Card sotib olindi!\n\n<blockquote>💰 Hisobingizga 1 ta Free Card qo'shildi. Xaridingiz uchun raxmat!</blockquote></b>",
+                reply_markup={"inline_keyboard": [[{"text": "🔙 Orqaga", "callback_data": "kabinet"}]]})
+        else:
+            answer_callback(qid, "🚫 Hisobingizda mablag' yetarli mavjud emas!\n\n💳 Bot hisobingizni yetarlicha to'ldirib, keyinroq qaytib keling!", show_alert=True)
+        return
+
+    if data == "chegirmalar":
+        edit_message_text(cid2, mid2,
+            "<b>📋 Quyidagilardan birini tanlang:</b>\n\n<blockquote><b>⭐ Chegirma: -{}%\n💵 Narxi: {} {}\n📅 Muddati:</b> <i>Cheksiz</i></blockquote>\n\n<b>📑: Ushbu chegirmani sotib olish orqali siz barcha xizmatlarga chegirma olasiz.</b>".format(
+                int(foiz2), int(narx), valyuta),
+            reply_markup={"inline_keyboard": [
+                [{"text": "✅ Sotib olish", "callback_data": "shop"}],
+                [{"text": "🔙 Orqaga", "callback_data": "kabinet"}],
+            ]})
+        return
+
+    if data == "shop":
+        if pul >= narx:
+            put_file("status/{}.txt".format(cid2), "VIP")
+            new_pul = pul - narx
+            put_file("pul/{}.txt".format(cid2), str(new_pul))
+            edit_message_text(cid2, mid2,
+                "🔰 <b>Xizmatlar uchun -{}% chegirmani muvaffaqiyatli sotib oldingiz.✅</b>\n\n<i>🛍 Xaridingiz uchun raxmat!</i>".format(int(foiz2)),
+                reply_markup={"inline_keyboard": [[{"text": "🔙 Orqaga", "callback_data": "kabinet"}]]})
+        else:
+            answer_callback(qid, "🚫 Hisobingizda mablag' yetarli mavjud emas!", show_alert=True)
+        return
+
+    if data == "almashish":
+        if pul >= transfer:
+            delete_message(cid2, mid2)
+            send_message(cid2, "<b>💰 Qancha mablag'ingizni o'tkazmoqchisiz ⁉️</b>\n\n<blockquote>📃 Namuna: 1000</blockquote>",
+                reply_markup=back_kb)
+            put_file("step/{}.step".format(cid2), "almashish")
+        else:
+            answer_callback(qid, "‼ Hisobingizda mablag' yetarli emas.✅", show_alert=True)
+        return
+
+    if data == "promokod":
+        promo = get_file("admin/kanal2.txt", "").strip()
+        delete_message(cid2, mid2)
+        send_message(cid2,
+            "<b>🎟 Promokod nomini yuboring.✅</b>\n\n<blockquote><i>📲 Kodlarni: {} kanalidan topishingiz mumkin.⚡️</i></blockquote>".format(promo),
+            reply_markup=back_kb)
+        put_file("step/{}.step".format(cid2), "promo")
+        return
+
+    if data == "oplata":
+        if not turi:
+            answer_callback(qid, "🤷🏻‍♂ To'lov tizimlari qo'shilmagan!", show_alert=True)
+        else:
+            payment_kb = build_payment_keyboard(turi)
+            edit_message_text(cid2, mid2,
+                "<b>⚠️ Diqqat! Barcha to'lov tizimlari xavfsiz...\n\n👤 ID raqamingiz: {}</b>".format(cid2),
+                reply_markup={"inline_keyboard": payment_kb})
+        return
+
+    if data == "orqa":
+        if turi:
+            payment_kb = build_payment_keyboard(turi)
+            edit_message_text(cid2, mid2,
+                "<b>⚠️ Diqqat! Barcha to'lov tizimlari xavfsiz...\n\n👤 ID raqamingiz: {}</b>".format(cid2),
+                reply_markup={"inline_keyboard": payment_kb})
+        return
+
+    if data.startswith("pay-"):
+        tur = data.split("-", 1)[1]
+        wallet = get_file("tizim/{}/wallet.txt".format(tur), "").strip()
+        addition = get_file("tizim/{}/addition.txt".format(tur), "").strip()
+        edit_message_text(cid2, mid2,
+            "<b>To'lov tizimi: {}\n\n💳 Karta raqam: <code>{}</code>\n\nKarta raqam egasi: {}\n\n1) Istalgan pul miqdorini yuqoridagi hamyonga tashlang,\n2) «✅ To'lov qildim» tugmasini bosing,\n3) Qancha pul miqdori yuborganingizni kiriting,\n4) To'lov haqidagi suratni botga yuboring,\n5) Operator tomonidan almashuv tasdiqlanishini kuting!</b>".format(
+                tur, wallet, addition),
+            reply_markup={"inline_keyboard": [
+                [{"text": "✅ To'lov qildim", "callback_data": "money-{}".format(tur)}],
+                [{"text": "🔙 Orqaga", "callback_data": "orqa"}],
+            ]})
+        return
+
+    if data.startswith("money-"):
+        tur = data.split("-", 1)[1]
+        delete_message(cid2, mid2)
+        send_message(cid2, "<b>💵 To'lov miqdorini kiriting.\n\nKartaga qancha tashlagan bo'lsangiz shuni kiriting\n\nMinimal: 3000</b>",
+            reply_markup=back_kb)
+        put_file("step/{}.step".format(cid2), "oplata-{}".format(tur))
+        return
+
+    if data.startswith("on-"):
+        parts = data.split("-")
+        uid = parts[1] if len(parts) > 1 else ""
+        miqdor = parts[2] if len(parts) > 2 else "0"
+        u_pul = float(get_file("pul/{}.txt".format(uid), "0") or 0)
+        put_file("pul/{}.txt".format(uid), str(u_pul + float(miqdor)))
+        u_opl = float(get_file("oplata/{}.txt".format(uid), "0") or 0)
+        put_file("oplata/{}.txt".format(uid), str(u_opl + float(miqdor)))
+        delete_message(cid2, mid2)
+        send_message(uid, "<b>✅ So'rovingiz qabul qilindi!\n\n<i>Hisobingizga {} {} qo'shildi</i></b>".format(miqdor, valyuta))
+        send_message(ADMIN_ID, "<b>✅ Foydalanuvchi cheki qabul qilindi!</b>")
+        return
+
+    if data.startswith("off-"):
+        parts = data.split("-")
+        uid = parts[1] if len(parts) > 1 else ""
+        miqdor = parts[2] if len(parts) > 2 else "0"
+        edit_message_text(cid2, mid2, "<b>⚠️ {} {} to'lovingiz bekor qilindi.</b>".format(miqdor, valyuta))
+        return
+
+    if data == "servis":
+        delete_message(cid2, mid2)
+        answer_callback(qid, "✅ Quyidagi tarmoqlardan birini tanlang:", show_alert=False)
+        nakrutka_kb = get_nakrutka_keyboard()
+        send_message(cid2, "<b>✅ Bizning xizmatlarimizni tanlaganingizdan xursandmiz!\n👇 Quydagi Ijtimoiy tarmoqlardan birini tanlang.</b>",
+            reply_markup=nakrutka_kb)
+        return
+
+    if data.startswith("nakrutka-"):
+        ex = data.split("-", 1)[1]
+        free_narx = get_file("nakrutka/{}/narxi.txt".format(ex), "Tekin").strip()
+        ichki_txt = get_file("nakrutka/{}/ichki.txt".format(ex), "").strip()
+        put_file("step/{}.bol".format(cid2), ex)
+        if not ichki_txt:
+            answer_callback(qid, "‼ Ichki bo'limlar qo'shilmagan!", show_alert=True)
+            return
+        qator2 = int(get_file("tugma/qator2.txt", "1") or 1)
+        lines = [l for l in ichki_txt.split("\n") if l.strip()]
+        keys = []
+        for line in lines:
+            xizmat_txt = get_file("nakrutka/{}/{}/xizmat.txt".format(ex, line), "")
+            ta = xizmat_txt.count("\n")
+            keys.append({"text": "{} - {}".format(line, ta), "callback_data": "tanlash-{}".format(line)})
+        rows = [keys[i:i+1] for i in range(0, len(keys), 1)]
+        rows.append([{"text": "🔙 Orqaga", "callback_data": "servis"}])
+        if free_narx == "Pullik":
+            edit_message_text(cid2, mid2,
+                "<b>‼ Ushbu bo'limdan foydalanish uchun 1ta Free Card kerak bo'ladi!</b>",
+                reply_markup={"inline_keyboard": [
+                    [{"text": "✅ Roziman", "callback_data": "roziman-{}".format(ex)}],
+                    [{"text": "❌ Bekor qilish", "callback_data": "servis"}],
+                ]})
+        else:
+            answer_callback(qid, "✅ Quyidagi tarmoqlardan birini tanlang:", show_alert=False)
+            edit_message_text(cid2, mid2, "<b>{} - bo'limlardan birini tanlang!</b>".format(ex),
+                reply_markup={"inline_keyboard": rows})
+        return
+
+    if data.startswith("roziman-"):
+        ex = data.split("-", 1)[1]
+        ichki_txt = get_file("nakrutka/{}/ichki.txt".format(ex), "").strip()
+        put_file("step/{}.bol".format(cid2), ex)
+        if not ichki_txt:
+            answer_callback(qid, "‼ Ichki bo'limlar qo'shilmagan!", show_alert=True)
+            return
+        lines = [l for l in ichki_txt.split("\n") if l.strip()]
+        keys = []
+        for line in lines:
+            xizmat_txt = get_file("nakrutka/{}/{}/xizmat.txt".format(ex, line), "")
+            ta = xizmat_txt.count("\n")
+            keys.append({"text": "{} - {}".format(line, ta), "callback_data": "tanlash-{}".format(line)})
+        rows = [keys[i:i+1] for i in range(0, len(keys), 1)]
+        rows.append([{"text": "🔙 Orqaga", "callback_data": "servis"}])
+        if freecard <= 0:
+            key4_txt = get_file("tugma/key4.txt", "💵 Hisobim")
+            answer_callback(qid, "💳 Hisobingizda yetarli Free Card mavjud emas!\n\n« {} » bo'limidan Free Card sotib olib qaytadan urinib ko'ring!".format(key4_txt), show_alert=True)
+        else:
+            answer_callback(qid, "✅ Hisobingizdan 1ta Free Card yechib olindi!", show_alert=True)
+            new_fc = freecard - 1
+            put_file("odam/{}.card".format(cid2), str(new_fc))
+            edit_message_text(cid2, mid2, "<b>{} - bo'limlardan birini tanlang!</b>".format(ex),
+                reply_markup={"inline_keyboard": rows})
+        return
+
+    if data.startswith("tanlash-"):
+        ich = data.split("-", 1)[1]
+        bolim = get_file("step/{}.bol".format(cid2), "").strip()
+        xizmat_txt = get_file("nakrutka/{}/{}/xizmat.txt".format(bolim, ich), "").strip()
+        put_file("step/{}.ich".format(cid2), ich)
+        if not xizmat_txt:
+            answer_callback(qid, "‼ Xizmatlar qo'shilmagan!", show_alert=True)
+            return
+        if not sayt or not api:
+            answer_callback(qid, "API sozlanmagan!", show_alert=True)
+            return
+        lines = [l for l in xizmat_txt.split("\n") if l.strip()]
+        qator3 = int(get_file("tugma/qator3.txt", "5") or 5)
+        keys = []
+        list_text = ""
+        try:
+            services_resp = requests.get("{}?key={}&action=services".format(sayt, api), timeout=15).json()
+        except Exception:
+            services_resp = []
+        for i, line in enumerate(lines, 1):
+            s_id = get_file("nakrutka/{}/{}/{}/id.txt".format(bolim, ich, line), "").strip()
+            rate = 0
+            for el in services_resp:
+                if str(el.get("service", "")) == s_id:
+                    rate = float(el.get("rate", 0))
+                    break
+            rate_kr = rate * kurs
+            rp = rate_kr / 100 * foiz + rate_kr
+            rps = rp / 100 * foiz2
+            rr = rp - rps
+            if status == "VIP":
+                list_text += "<b>{}.</b> {} - <b>{} {}</b>\n".format(i, line, round(rr, 2), valyuta)
+            else:
+                list_text += "<b>{}.</b> {} - <b>{} {}</b>\n".format(i, line, round(rp, 2), valyuta)
+            keys.append({"text": str(i), "callback_data": "i-{}".format(line)})
+        qator3 = int(qator3)
+        rows = [keys[j:j+qator3] for j in range(0, len(keys), qator3)]
+        rows.append([{"text": "🔙 Orqaga", "callback_data": "nakrutka-{}".format(bolim)}])
+        edit_message_text(cid2, mid2,
+            "<b>👇🏻 Quyidagi xizmatlardan birini tanlang, narxlar 1000 tasi uchun berilgan:</b>\n\n{}".format(list_text),
+            reply_markup={"inline_keyboard": rows})
+        return
+
+    if data.startswith("i-"):
+        xiz = data.split("-", 1)[1]
+        bolim = get_file("step/{}.bol".format(cid2), "").strip()
+        ich = get_file("step/{}.ich".format(cid2), "").strip()
+        s_id = get_file("nakrutka/{}/{}/{}/id.txt".format(bolim, ich, xiz), "").strip()
+        put_file("step/{}.xiz".format(cid2), xiz)
+        soni_buy = get_file("nakrutka/{}/{}/{}/buyurtma_soni.txt".format(bolim, ich, xiz), "0").strip()
+        if not sayt or not api:
+            answer_callback(qid, "API sozlanmagan!", show_alert=True)
+            return
+        try:
+            services_resp = requests.get("{}?key={}&action=services".format(sayt, api), timeout=15).json()
+        except Exception:
+            services_resp = []
+        rate = mn = mx = 0
+        refill = cancel = False
+        for el in services_resp:
+            if str(el.get("service", "")) == s_id:
+                rate = float(el.get("rate", 0))
+                mn = int(el.get("min", 0))
+                mx = int(el.get("max", 0))
+                refill = el.get("refill", False)
+                cancel = el.get("cancel", False)
+                break
+        rate_kr = rate * kurs
+        rp = rate_kr / 100 * foiz + rate_kr
+        rps = rp / 100 * foiz2
+        rr = rp - rps
+        refillhol = "Mumkun." if refill else "Mumkun emas."
+        cancelhol = "Mumkun." if cancel else "Mumkun emas."
+        if soni_buy == "0":
+            buy_info = "🧮 Bu xizmatni xali ishlatib ko'rilmagan!"
+        else:
+            buy_info = "🧮 Ushbu xizmat {} marotaba buyurtma berilgan!".format(soni_buy)
+        if status == "VIP":
+            price_show = "<s>❌ {} {}</s>  <b>✅ {} {}</b>".format(round(rp, 2), valyuta, round(rr, 2), valyuta)
+            ra = rr
+        else:
+            price_show = "{} {}".format(round(rp, 2), valyuta)
+            ra = rp
+        edit_message_text(cid2, mid2,
+            "<b>{} - {}</b>\n\n<b>🔑 ID:</b> <code>{}</code>\n<b>💵 Narxi (1000x):</b> {}\n\n<blockquote>⏳ Bajarilish vaqti: tez orada\n🔗 Havola: Havola kiritiladi\n🔄 Qayta tiklash: {}\n⚠️ Bekor qilish: {}\n{}</blockquote>\n\n<b>🔼 Minimal buyurtma miqdori: {} ta\n🔽 Maksimal buyurtma miqdori: {} ta</b>".format(
+                xiz, bolim, s_id, price_show, refillhol, cancelhol, buy_info, mn, mx),
+            reply_markup={"inline_keyboard": [
+                [{"text": "✅ Buyurtma berish", "callback_data": "buyurtma-{}-{}-{}-{}-{}".format(round(ra, 2), mn, mx, s_id, xiz)}],
+                [{"text": "🔙 Orqaga", "callback_data": "tanlash-{}-{}".format(ich, bolim)}],
+            ]})
+        return
+
+    if data.startswith("buyurtma-"):
+        parts = data.split("-")
+        b_narx = parts[1] if len(parts) > 1 else "0"
+        b_min = parts[2] if len(parts) > 2 else "0"
+        b_max = parts[3] if len(parts) > 3 else "0"
+        b_id = parts[4] if len(parts) > 4 else ""
+        b_xiz = parts[5] if len(parts) > 5 else ""
+        delete_message(cid2, mid2)
+        send_message(cid2,
+            "<b>{} - sonini yozing:\n\n🔼 Minimal: {} ta\n🔽 Maksimal: {} ta.</b>".format(b_xiz, b_min, b_max),
+            reply_markup={"resize_keyboard": True, "keyboard": [[{"text": "🔙 Orqaga"}]]})
+        bolim = get_file("step/{}.bol".format(cid2), "")
+        put_file("step/{}.step".format(cid2), "by-{}-{}-{}-{}-{}-{}".format(b_narx, b_min, b_max, b_id, b_xiz, bolim))
+        return
+
+    if data.startswith("byber-"):
+        parts = data.split("-")
+        miqdor = parts[1] if len(parts) > 1 else "0"
+        son = parts[2] if len(parts) > 2 else "0"
+        s_id = parts[3] if len(parts) > 3 else ""
+        delete_message(cid2, mid2)
+        url = get_file("step/{}.url".format(cid2), "").strip()
+        if not url or not sayt or not api:
+            send_message(cid2, "<b>⚠️ Xatolik! Bot administratorlariga murojaat qiling.</b>", reply_markup=menu_kb)
+            return
+        try:
+            order_resp = requests.get("{}?key={}&action=add&link={}&quantity={}&service={}".format(sayt, api, url, son, s_id), timeout=15).json()
+            order = order_resp.get("order")
+        except Exception:
+            order = None
+        if not order:
+            send_message(cid2, "<b>⚠️ Xatolik! Bu xatolik haqida bot administratorlariga hoziroq xabar bering.✅</b>", reply_markup=menu_kb)
+            unlink("step/{}.url".format(cid2))
+            unlink("step/{}.son".format(cid2))
+            unlink("step/{}.bol".format(cid2))
+            unlink("step/{}.ich".format(cid2))
+            unlink("step/{}.xiz".format(cid2))
+        else:
+            new_pul = pul - float(miqdor)
+            put_file("pul/{}.txt".format(cid2), str(new_pul))
+            new_nak = by_count + 1
+            put_file("pul/{}.nak".format(cid2), str(new_nak))
+            buy_id_num = int(get_file("buyurtma/id.txt", "0") or 0) + 1
+            mkdir_safe("buyurtma/{}".format(buy_id_num))
+            put_file("buyurtma/id.txt", str(buy_id_num))
+            put_file("buyurtma/{}/order.txt".format(buy_id_num), str(order))
+            put_file("buyurtma/{}/egasi.txt".format(buy_id_num), cid2)
+            put_file("buyurtma/{}/soni.txt".format(buy_id_num), son)
+            put_file("buyurtma/{}/miqdor.txt".format(buy_id_num), miqdor)
+            bolim = get_file("step/{}.bol".format(cid2), "")
+            ich = get_file("step/{}.ich".format(cid2), "")
+            xiz = get_file("step/{}.xiz".format(cid2), "")
+            soni_prev = int(get_file("nakrutka/{}/{}/{}/buyurtma_soni.txt".format(bolim, ich, xiz), "0") or 0)
+            put_file("nakrutka/{}/{}/{}/buyurtma_soni.txt".format(bolim, ich, xiz), str(soni_prev + 1))
+            send_message(cid2,
+                "<b>✅ Qabul qilindi.\n\n🆔 Buyurtma idsi: <code>{}</code>\n📦 Buyurtma holati: Bajarilmoqda</b>\n\n<i>—Buyurtma to'liq bajarilganda sizga habar beriladi!</i>".format(buy_id_num),
+                reply_markup=menu_kb)
+            unlink("step/{}.url".format(cid2))
+            unlink("step/{}.son".format(cid2))
+            unlink("step/{}.bol".format(cid2))
+            unlink("step/{}.ich".format(cid2))
+            unlink("step/{}.xiz".format(cid2))
+        return
+
+    if data == "bot":
+        holat_cur = get_file("admin/holat.txt", "Yoqilgan").strip()
+        if holat_cur == "Yoqilgan":
+            put_file("admin/holat.txt", "O'chirilgan")
+        else:
+            put_file("admin/holat.txt", "Yoqilgan")
+        edit_message_text(cid2, mid2, "<b>Muvaffaqiyatli o'zgartirildi!</b>",
+            reply_markup={"inline_keyboard": [[{"text": "◀️ Orqaga", "callback_data": "xolat"}]]})
+        return
+
+    if data == "xolat":
+        holat_cur = get_file("admin/holat.txt", "Yoqilgan").strip()
+        xolat = "O'chirish" if holat_cur == "Yoqilgan" else "Yoqish"
+        delete_message(cid2, mid2)
+        send_message(cid2, "<b>Hozirgi holat:</b> {}".format(holat_cur),
+            reply_markup={"inline_keyboard": [
+                [{"text": xolat, "callback_data": "bot"}],
+                [{"text": "Yopish", "callback_data": "boshqarish"}]
+            ]})
+        return
+
+    if data == "boshqarish":
+        edit_message_text(cid2, mid2, "<b>Yopildi.</b>")
+        return
+
+    if data == "list":
+        cur_admins = get_file("admin/admins.txt", "")
+        edit_message_text(cid2, mid2,
+            "<b>👮 Adminlar ro'yxati:</b>\n\n{}".format(cur_admins),
+            reply_markup={"inline_keyboard": [[{"text": "◀️ Orqaga", "callback_data": "admins"}]]})
+        return
+
+    if data == "admins":
+        delete_message(cid2, mid2)
+        if callfrid == ADMIN_ID:
+            send_message(cid2, "<b>Quyidagilardan birini tanlang:</b>",
+                reply_markup={"inline_keyboard": [
+                    [{"text": "➕ Yangi admin qo'shish", "callback_data": "add"}],
+                    [{"text": "📑 Ro'yxat", "callback_data": "list"}, {"text": "🗑 O'chirish", "callback_data": "remove"}],
+                ]})
+        else:
+            send_message(cid2, "<b>Quyidagilardan birini tanlang:</b>",
+                reply_markup={"inline_keyboard": [[{"text": "📑 Ro'yxat", "callback_data": "list"}]]})
+        return
+
+    if data == "add":
+        delete_message(cid2, mid2)
+        send_message(ADMIN_ID, "*Kerakli iD raqamni kiriting:*", parse_mode="MarkDown", reply_markup=boshqarish_kb)
+        put_file("step/{}.step".format(cid2), "add-admin")
+        return
+
+    if data == "remove":
+        delete_message(cid2, mid2)
+        send_message(ADMIN_ID, "<b>Kerakli iD raqamni kiriting:</b>", reply_markup=boshqarish_kb)
+        put_file("step/{}.step".format(cid2), "remove-admin")
+        return
+
+    if data == "ban":
+        if saved and saved != ADMIN_ID:
+            ban_val = get_file("ban/{}.txt".format(saved), "").strip()
+            delete_message(cid2, mid2)
+            if ban_val == "ban":
+                unlink("ban/{}.txt".format(saved))
+                send_message(cid2, "<b>Foydalanuvchi ({}) bandan olindi!</b>".format(saved))
+            else:
+                put_file("ban/{}.txt".format(saved), "ban")
+                send_message(cid2, "<b>Foydalanuvchi ({}) banlandi!</b>".format(saved))
+        else:
+            answer_callback(qid, "Asosiy adminlarni blocklash mumkin emas!", show_alert=True)
+        return
+
+    if data == "plus":
+        send_message(cid2, "<a href='tg://user?id={}'>{}</a> <b>ning hisobiga qancha pul qo'shmoqchisiz?</b>".format(saved, saved),
+            reply_markup=boshqarish_kb)
+        put_file("step/{}.step".format(cid2), "plus")
+        return
+
+    if data == "minus":
+        send_message(cid2, "<a href='tg://user?id={}'>{}</a> <b>ning hisobiga qancha pul ayirmoqchisiz?</b>".format(saved, saved),
+            reply_markup=boshqarish_kb)
+        put_file("step/{}.step".format(cid2), "minus")
+        return
+
+    if data == "add_vip":
+        if saved:
+            cur_status = get_file("status/{}.txt".format(saved), "Oddiy").strip()
+            delete_message(cid2, mid2)
+            if cur_status == "VIP":
+                put_file("status/{}.txt".format(saved), "Oddiy")
+                send_message(cid2, "<b>Foydalanuvchi ({}) VIP dan olindi!</b>".format(saved))
+            else:
+                put_file("status/{}.txt".format(saved), "VIP")
+                send_message(cid2, "<b>Foydalanuvchi ({}) VIP ga qo'shildi!</b>".format(saved))
+        return
+
+    if data == "send":
+        lich = user_id_file.count("\n") + 1
+        delete_message(cid2, mid2)
+        send_message(cid2, "<b>{} ta foydalanuvchiga yuboriladigan xabar matnini yuboring:</b>".format(lich),
+            reply_markup=boshqarish_kb)
+        put_file("step/{}.step".format(cid2), "oddiy")
+        return
+
+    if data == "forsend":
+        lich = user_id_file.count("\n") + 1
+        delete_message(cid2, mid2)
+        send_message(cid2, "<b>{} ta foydalanuvchiga yuboriladigan forward xabarni yuboring:</b>".format(lich),
+            reply_markup=boshqarish_kb)
+        put_file("step/{}.step".format(cid2), "forward")
+        return
+
+    if data == "kanallar":
+        delete_message(cid2, mid2)
+        send_message(cid2, "<b>⤵ Quyidagilardan birini tanlang:</b>",
+            reply_markup={"inline_keyboard": [
+                [{"text": "🔐 Majburiy obunalar", "callback_data": "majburiy"}],
+                [{"text": "🆕️ Promokod uchun", "callback_data": "promo"}],
+            ]})
+        return
+
+    if data == "majburiy":
+        edit_message_text(cid2, mid2, "<b>⚙ Majburiy obunalarni sozlash bo'limidasiz:</b>",
+            reply_markup={"inline_keyboard": [
+                [{"text": "📑 Kanallar ro'yxati", "callback_data": "royxat"}],
+                [{"text": "➕ Qo'shish", "callback_data": "qoshish"}, {"text": "🗑 O'chirish", "callback_data": "ochirish"}],
+                [{"text": "◀️ Orqaga", "callback_data": "kanallar"}],
+            ]})
+        return
+
+    if data == "qoshish":
+        delete_message(cid2, mid2)
+        send_message(cid2, "📢 <b>Kerakli kanalni manzilini yuboring:\n\nNamuna:</b> @TexnoPHPuz",
+            reply_markup=boshqarish_kb)
+        put_file("step/{}.step".format(cid2), "qo'shish")
+        return
+
+    if data == "ochirish":
+        delete_message(cid2, mid2)
+        send_message(cid2, "<b>Barcha kanallar o'chirildi!</b>")
+        unlink("admin/kanal.txt")
+        return
+
+    if data == "royxat":
+        kanal_cur = get_file("admin/kanal.txt", "").strip()
+        soni = kanal_cur.count("@")
+        if not kanal_cur:
+            edit_message_text(cid2, mid2, "<b>Hech qanday kanallar ulanmagan!</b>",
+                reply_markup={"inline_keyboard": [[{"text": "◀️ Orqaga", "callback_data": "majburiy"}]]})
+        else:
+            edit_message_text(cid2, mid2,
+                "<b>📢 Kanallar ro'yxati:</b>\n\n{}\n\n<b>Ulangan kanallar soni:</b> {} ta".format(kanal_cur, soni),
+                reply_markup={"inline_keyboard": [[{"text": "◀️ Orqaga", "callback_data": "majburiy"}]]})
+        return
+
+    if data == "promo":
+        delete_message(cid2, mid2)
+        send_message(cid2, "📢 <b>Kerakli kanalni manzilini yuboring:\n\nNamuna:</b> @TexnoPHPuz",
+            reply_markup=boshqarish_kb)
+        put_file("step/{}.step".format(cid2), "promokod")
+        return
+
+    if data == "yangiapi":
+        delete_message(cid2, mid2)
+        send_message(cid2,
+            "<b>Kerakli saytning API qo'llanmasida ko'rsatilgan API havolani yuboring:\n\nMasalan:</b> <code>https://gramapi.uz/api/v2</code>",
+            reply_markup=boshqarish_kb)
+        put_file("step/{}.step".format(cid2), "manzil")
+        return
+
+    if data == "api1":
+        cur_api = get_file("admin/api.txt", "").strip()
+        cur_sayt2 = get_file("admin/sayt.txt", "").strip()
+        if not cur_api:
+            ap1 = "<b>kiritilmagan</b>"
+            apt = "🆕 APIni kiritish"
+            sayt1 = "<b>kiritilmagan</b>"
+            balans = "Mavjud emas"
+        else:
+            ap1 = "<code>{}</code>".format(cur_api)
+            apt = "🆕 APIni almashtirish"
+            sayt1 = "<code>{}</code>".format(cur_sayt2)
+            try:
+                bl = requests.get("{}?key={}&action=balance".format(cur_sayt2, cur_api), timeout=10).json()
+                balans = "{} {}".format(bl.get("balance", "?"), bl.get("currency", ""))
+            except Exception:
+                balans = "Mavjud emas"
+        delete_message(cid2, mid2)
+        send_message(cid2,
+            "📄<b> API ma'lumotlari:</b>\n➖➖➖➖➖➖➖➖➖➖➖\n<b>API havola:</b>\n{}\n\n<b>API kalit:</b>\n{}\n\n<b>API balans:</b>\n{}\n➖➖➖➖➖➖➖➖➖➖➖\n<i>Quyidagilardan birini tanlang:</i>".format(sayt1, ap1, balans),
+            reply_markup={"inline_keyboard": [[{"text": apt, "callback_data": "yangiapi"}]]})
+        return
+
+    if data == "new":
+        delete_message(cid2, mid2)
+        send_message(cid2, "<b>Yangi to'lov tizimi nomini yuboring:</b>", reply_markup=boshqarish_kb)
+        put_file("step/{}.step".format(cid2), "turi")
+        return
+
+    if data == "hamyon":
+        turi_cur = get_file("tizim/turi.txt", "").strip()
+        delete_message(cid2, mid2)
+        if not turi_cur:
+            send_message(cid2, "<b>Quyidagilardan birini tanlang:</b>",
+                reply_markup={"inline_keyboard": [[{"text": "➕ Yangi to'lov tizimi qo'shish", "callback_data": "new"}]]})
+        else:
+            pay_kb = build_delete_payment_keyboard(turi_cur)
+            send_message(cid2, "<b>Quyidagilardan birini tanlang:</b>", reply_markup={"inline_keyboard": pay_kb})
+        return
+
+    if data.startswith("del-"):
+        tur = data.split("-", 1)[1]
+        turi_cur = get_file("tizim/turi.txt", "")
+        new_turi = turi_cur.replace("\n" + tur, "").replace(tur + "\n", "")
+        put_file("tizim/turi.txt", new_turi)
+        edit_message_text(cid2, mid2, "{} - <b>To'lov tizimi olib tashlandi.</b>".format(tur),
+            reply_markup={"inline_keyboard": [[{"text": "◀️ Orqaga", "callback_data": "hamyon"}]]})
+        delete_path("tizim/{}".format(tur))
+        return
+
+    if data == "kurs_soz":
+        delete_message(cid2, mid2)
+        send_message(cid2, "<b>🔑 API provayderingiz qaysi valyutada ishlasha o'sha valyutaning so'mdagi narxini yuboring:\n\n📑 Masalan:</b> 1",
+            reply_markup=boshqarish_kb)
+        put_file("step/{}.step".format(cid2), "kurs_soz")
+        return
+
+    if data == "foiz_soz":
+        delete_message(cid2, mid2)
+        send_message(cid2, "<b>🛍 Bot xizmatlari uchun foiz yuboring:\n\n📑 Masalan:</b> 5",
+            reply_markup=boshqarish_kb)
+        put_file("step/{}.step".format(cid2), "updFoiz")
+        return
+
+    if data == "discount_soz":
+        delete_message(cid2, mid2)
+        send_message(cid2, "<b>🛍 Chegirma olganlarga xizmatlar uchun foizni yuboring:\n\n📑 Masalan:</b> 5",
+            reply_markup=boshqarish_kb)
+        put_file("step/{}.step".format(cid2), "discount_soz")
+        return
+
+    if data == "valyuta":
+        delete_message(cid2, mid2)
+        send_message(cid2, "📝 <b>Yangi qiymatni yuboring:</b>", reply_markup=boshqarish_kb)
+        put_file("step/{}.step".format(cid2), "valyuta")
+        return
+
+    if data == "ref_narx":
+        delete_message(cid2, mid2)
+        send_message(cid2, "📝 <b>Yangi qiymatni yuboring:</b>", reply_markup=boshqarish_kb)
+        put_file("step/{}.step".format(cid2), "taklif")
+        return
+
+    if data == "chegirma_narx":
+        delete_message(cid2, mid2)
+        send_message(cid2, "📝 <b>Yangi qiymatni yuboring:</b>", reply_markup=boshqarish_kb)
+        put_file("step/{}.step".format(cid2), "vnarx")
+        return
+
+    if data == "transfer":
+        delete_message(cid2, mid2)
+        send_message(cid2, "📝 <b>Yangi qiymatni yuboring:</b>", reply_markup=boshqarish_kb)
+        put_file("step/{}.step".format(cid2), "transfer")
+        return
+
+    if data == "freecard_narxi":
+        delete_message(cid2, mid2)
+        send_message(cid2, "📝 <b>Yangi qiymatni yuboring:</b>", reply_markup=boshqarish_kb)
+        put_file("step/{}.step".format(cid2), "freecard_narxi")
+        return
+
+    if data == "bolim":
+        edit_message_text(cid2, mid2, "<b>Quyidagilardan birini tanlang:</b>",
+            reply_markup={"inline_keyboard": [
+                [{"text": "➕ Yangi bo'lim qo'shish", "callback_data": "newFol"}],
+                [{"text": "💰 Bo'limlarni pullik qilish", "callback_data": "soqqaFol"}],
+                [{"text": "📝 Tahrirlash", "callback_data": "editFol"}],
+                [{"text": "🗑 O'chirish", "callback_data": "delFol"}],
+                [{"text": "◀️ Orqaga", "callback_data": "buy"}]
+            ]})
+        return
+
+    if data == "ichki":
+        edit_message_text(cid2, mid2, "<b>Quyidagilardan birini tanlang:</b>",
+            reply_markup={"inline_keyboard": [
+                [{"text": "➕ Ichki bo'lim qo'shish", "callback_data": "newFold"}],
+                [{"text": "📝 Tahrirlash", "callback_data": "editFold"}],
+                [{"text": "🗑 O'chirish", "callback_data": "delFold"}],
+                [{"text": "◀️ Orqaga", "callback_data": "buy"}]
+            ]})
+        return
+
+    if data == "xizmat":
+        edit_message_text(cid2, mid2, "<b>Quyidagilardan birini tanlang:</b>",
+            reply_markup={"inline_keyboard": [
+                [{"text": "➕ Yangi xizmat qo'shish", "callback_data": "newXiz"}],
+                [{"text": "📝 Tahrirlash", "callback_data": "editXiz"}],
+                [{"text": "🗑 O'chirish", "callback_data": "delXiz"}],
+                [{"text": "◀️ Orqaga", "callback_data": "buy"}]
+            ]})
+        return
+
+    if data == "buy":
+        delete_message(cid2, mid2)
+        send_message(cid2, "<b>Quyidagilardan birini tanlang:</b>",
+            reply_markup={"inline_keyboard": [
+                [{"text": "📂 Bo'limlarni sozlash", "callback_data": "bolim"}],
+                [{"text": "📂 Ichki bo'lim sozlash", "callback_data": "ichki"}],
+                [{"text": "🛍 Xizmatlarni sozlash", "callback_data": "xizmat"}],
+                [{"text": "🗑 Barchasini tozalash", "callback_data": "toza"}],
+            ]})
+        return
+
+    if data == "toza":
+        delete_message(cid2, mid2)
+        send_message(cid2, "<b>⚠️ Ushbu holatda xizmatlarni tozalasangiz, keyinchalik qayta tiklab bo'lmaydi</b>",
+            reply_markup={"inline_keyboard": [
+                [{"text": "✅ Tasdiqlash", "callback_data": "barcha2"}],
+                [{"text": "◀️ Orqaga", "callback_data": "buy"}],
+            ]})
+        return
+
+    if data == "barcha2":
+        delete_message(cid2, mid2)
+        send_message(cid2, "<b>Barcha malumotlar tozalandi</b>")
+        delete_path("nakrutka")
+        mkdir_safe("nakrutka")
+        put_file("nakrutka/bolim.txt", "")
+        return
+
+    if data == "newFol":
+        delete_message(cid2, mid2)
+        send_message(cid2, "<b>Yangi bo'lim nomini yuboring:</b>", reply_markup=boshqarish_kb)
+        put_file("step/{}.step".format(cid2), "newFol")
+        return
+
+    if data == "newFold":
+        bolim_txt = get_file("nakrutka/bolim.txt", "").strip()
+        if not bolim_txt:
+            answer_callback(qid, "Hech narsa topilmadi!", show_alert=True)
+            return
+        qator1 = int(get_file("tugma/qator1.txt", "2") or 2)
+        lines = [l for l in bolim_txt.split("\n") if l.strip()]
+        keys = [{"text": l, "callback_data": "adFol-{}".format(l)} for l in lines]
+        rows = [keys[i:i+qator1] for i in range(0, len(keys), qator1)]
+        rows.append([{"text": "Orqaga", "callback_data": "buy"}])
+        edit_message_text(cid2, mid2, "<b>Quyidagilardan birini tanlang:</b>", reply_markup={"inline_keyboard": rows})
+        return
+
+    if data.startswith("adFol-"):
+        ex = data.split("-", 1)[1]
+        put_file("step/test.txt", ex)
+        delete_message(cid2, mid2)
+        send_message(cid2, "<b>Yangi ichki bo'lim nomini yuboring:</b>", reply_markup=boshqarish_kb)
+        put_file("step/{}.step".format(cid2), "newFold")
+        return
+
+    if data == "newXiz":
+        bolim_txt = get_file("nakrutka/bolim.txt", "").strip()
+        if not bolim_txt:
+            answer_callback(qid, "Hech narsa topilmadi!", show_alert=True)
+            return
+        qator1 = int(get_file("tugma/qator1.txt", "2") or 2)
+        lines = [l for l in bolim_txt.split("\n") if l.strip()]
+        keys = [{"text": l, "callback_data": "add-{}".format(l)} for l in lines]
+        rows = [keys[i:i+qator1] for i in range(0, len(keys), qator1)]
+        rows.append([{"text": "Orqaga", "callback_data": "buy"}])
+        edit_message_text(cid2, mid2, "<b>Quyidagilardan birini tanlang:</b>", reply_markup={"inline_keyboard": rows})
+        return
+
+    if data.startswith("add-"):
+        ex = data.split("-", 1)[1]
+        put_file("step/test.txt", ex)
+        ichki_txt = get_file("nakrutka/{}/ichki.txt".format(ex), "").strip()
+        if not ichki_txt:
+            answer_callback(qid, "Hech narsa topilmadi!", show_alert=True)
+            return
+        qator2 = int(get_file("tugma/qator2.txt", "1") or 1)
+        lines = [l for l in ichki_txt.split("\n") if l.strip()]
+        keys = [{"text": l, "callback_data": "adds-{}".format(l)} for l in lines]
+        rows = [keys[i:i+qator2] for i in range(0, len(keys), qator2)]
+        rows.append([{"text": "Orqaga", "callback_data": "buy"}])
+        edit_message_text(cid2, mid2, "<b>Quyidagilardan birini tanlang:</b>", reply_markup={"inline_keyboard": rows})
+        return
+
+    if data.startswith("adds-"):
+        ex = data.split("-", 1)[1]
+        put_file("step/test1.txt", ex)
+        delete_message(cid2, mid2)
+        send_message(cid2, "<b>Xizmat nomini yuboring. Eslatma xizmat nomi 28 ta belgilardan oshmasligi kerak!</b>",
+            reply_markup=boshqarish_kb)
+        put_file("step/{}.step".format(cid2), "ServisID")
+        return
+
+    if data == "delFol":
+        bolim_txt = get_file("nakrutka/bolim.txt", "").strip()
+        if not bolim_txt:
+            answer_callback(qid, "Hech narsa topilmadi!", show_alert=True)
+            return
+        qator1 = int(get_file("tugma/qator1.txt", "2") or 2)
+        lines = [l for l in bolim_txt.split("\n") if l.strip()]
+        keys = [{"text": l, "callback_data": "delFols-{}".format(l)} for l in lines]
+        rows = [keys[i:i+qator1] for i in range(0, len(keys), qator1)]
+        rows.append([{"text": "Orqaga", "callback_data": "buy"}])
+        edit_message_text(cid2, mid2, "<b>Quyidagilardan birini tanlang:</b>", reply_markup={"inline_keyboard": rows})
+        return
+
+    if data.startswith("delFols-"):
+        ex = data.split("-", 1)[1]
+        bolim_txt = get_file("nakrutka/bolim.txt", "")
+        new_bolim = bolim_txt.replace("\n" + ex, "").replace(ex + "\n", "")
+        put_file("nakrutka/bolim.txt", new_bolim)
+        delete_path("nakrutka/{}".format(ex))
+        delete_message(cid2, mid2)
+        send_message(cid2, "<b>O'chirish yakunlandi!</b>", reply_markup=panel_kb)
+        return
+
+    if data == "delFold":
+        bolim_txt = get_file("nakrutka/bolim.txt", "").strip()
+        if not bolim_txt:
+            answer_callback(qid, "Hech narsa topilmadi!", show_alert=True)
+            return
+        qator1 = int(get_file("tugma/qator1.txt", "2") or 2)
+        lines = [l for l in bolim_txt.split("\n") if l.strip()]
+        keys = [{"text": l, "callback_data": "delFolds-{}".format(l)} for l in lines]
+        rows = [keys[i:i+qator1] for i in range(0, len(keys), qator1)]
+        rows.append([{"text": "Orqaga", "callback_data": "buy"}])
+        edit_message_text(cid2, mid2, "<b>Quyidagilardan birini tanlang:</b>", reply_markup={"inline_keyboard": rows})
+        return
+
+    if data.startswith("delFolds-"):
+        b = data.split("-", 1)[1]
+        ichki_txt = get_file("nakrutka/{}/ichki.txt".format(b), "").strip()
+        if not ichki_txt:
+            answer_callback(qid, "Hech narsa topilmadi!", show_alert=True)
+            return
+        qator2 = int(get_file("tugma/qator2.txt", "1") or 1)
+        lines = [l for l in ichki_txt.split("\n") if l.strip()]
+        keys = [{"text": l, "callback_data": "delFolm-{}-{}".format(l, b)} for l in lines]
+        rows = [keys[i:i+qator2] for i in range(0, len(keys), qator2)]
+        rows.append([{"text": "Orqaga", "callback_data": "buy"}])
+        edit_message_text(cid2, mid2, "<b>Quyidagilardan birini tanlang:</b>", reply_markup={"inline_keyboard": rows})
+        return
+
+    if data.startswith("delFolm-"):
+        parts = data.split("-")
+        ex = parts[1] if len(parts) > 1 else ""
+        b = parts[2] if len(parts) > 2 else ""
+        ichki_txt = get_file("nakrutka/{}/ichki.txt".format(b), "")
+        new_ichki = ichki_txt.replace("\n" + ex, "").replace(ex + "\n", "")
+        put_file("nakrutka/{}/ichki.txt".format(b), new_ichki)
+        delete_path("nakrutka/{}/{}".format(b, ex))
+        delete_message(cid2, mid2)
+        send_message(cid2, "<b>O'chirish yakunlandi!</b>", reply_markup=panel_kb)
+        return
+
+    if data == "delXiz":
+        bolim_txt = get_file("nakrutka/bolim.txt", "").strip()
+        if not bolim_txt:
+            answer_callback(qid, "Hech narsa topilmadi!", show_alert=True)
+            return
+        qator1 = int(get_file("tugma/qator1.txt", "2") or 2)
+        lines = [l for l in bolim_txt.split("\n") if l.strip()]
+        keys = [{"text": l, "callback_data": "deleteXiz-{}".format(l)} for l in lines]
+        rows = [keys[i:i+qator1] for i in range(0, len(keys), qator1)]
+        rows.append([{"text": "Orqaga", "callback_data": "buy"}])
+        edit_message_text(cid2, mid2, "<b>Quyidagilardan birini tanlang:</b>", reply_markup={"inline_keyboard": rows})
+        return
+
+    if data.startswith("deleteXiz-"):
+        b = data.split("-", 1)[1]
+        put_file("step/{}.bol".format(cid2), b)
+        ichki_txt = get_file("nakrutka/{}/ichki.txt".format(b), "").strip()
+        if not ichki_txt:
+            answer_callback(qid, "Hech narsa topilmadi!", show_alert=True)
+            return
+        qator2 = int(get_file("tugma/qator2.txt", "1") or 1)
+        lines = [l for l in ichki_txt.split("\n") if l.strip()]
+        keys = [{"text": l, "callback_data": "delx-{}".format(l)} for l in lines]
+        rows = [keys[i:i+qator2] for i in range(0, len(keys), qator2)]
+        rows.append([{"text": "Orqaga", "callback_data": "buy"}])
+        edit_message_text(cid2, mid2, "<b>Quyidagilardan birini tanlang:</b>", reply_markup={"inline_keyboard": rows})
+        return
+
+    if data.startswith("delx-"):
+        ich = data.split("-", 1)[1]
+        b = get_file("step/{}.bol".format(cid2), "").strip()
+        xizmat_txt = get_file("nakrutka/{}/{}/xizmat.txt".format(b, ich), "").strip()
+        put_file("step/{}.ich".format(cid2), ich)
+        if not xizmat_txt:
+            answer_callback(qid, "Hech narsa topilmadi!", show_alert=True)
+            return
+        qator3 = int(get_file("tugma/qator3.txt", "5") or 5)
+        lines = [l for l in xizmat_txt.split("\n") if l.strip()]
+        list_text = ""
+        keys = []
+        for i, l in enumerate(lines, 1):
+            list_text += "<b>{}.</b> {}\n".format(i, l)
+            keys.append({"text": str(i), "callback_data": "delmat-{}".format(l)})
+        rows = [keys[j:j+qator3] for j in range(0, len(keys), qator3)]
+        rows.append([{"text": "Orqaga", "callback_data": "buy"}])
+        edit_message_text(cid2, mid2, "<b>Quyidagilardan birini tanlang:</b>\n\n{}".format(list_text),
+            reply_markup={"inline_keyboard": rows})
+        return
+
+    if data.startswith("delmat-"):
+        xiz = data.split("-", 1)[1]
+        ich = get_file("step/{}.ich".format(cid2), "").strip()
+        b = get_file("step/{}.bol".format(cid2), "").strip()
+        xizmat_txt = get_file("nakrutka/{}/{}/xizmat.txt".format(b, ich), "")
+        new_xiz = xizmat_txt.replace("\n" + xiz, "").replace(xiz + "\n", "")
+        put_file("nakrutka/{}/{}/xizmat.txt".format(b, ich), new_xiz)
+        delete_path("nakrutka/{}/{}/{}".format(b, ich, xiz))
+        delete_message(cid2, mid2)
+        send_message(cid2, "<b>O'chirish yakunlandi!</b>", reply_markup=panel_kb)
+        return
+
+    if data == "soqqaFol":
+        bolim_txt = get_file("nakrutka/bolim.txt", "").strip()
+        if not bolim_txt:
+            answer_callback(qid, "Hech narsa topilmadi!", show_alert=True)
+            return
+        qator1 = int(get_file("tugma/qator1.txt", "2") or 2)
+        lines = [l for l in bolim_txt.split("\n") if l.strip()]
+        keys = [{"text": l, "callback_data": "soqqa_fold-{}".format(l)} for l in lines]
+        rows = [keys[i:i+qator1] for i in range(0, len(keys), qator1)]
+        rows.append([{"text": "Orqaga", "callback_data": "buy"}])
+        edit_message_text(cid2, mid2, "<b>Quyidagilardan birini tanlang:</b>", reply_markup={"inline_keyboard": rows})
+        return
+
+    if data.startswith("soqqa_fold-"):
+        ex = data.split("-", 1)[1]
+        cur_narx = get_file("nakrutka/{}/narxi.txt".format(ex), "Tekin").strip()
+        if cur_narx == "Pullik":
+            edit_message_text(cid2, mid2,
+                "<b>💎 Ushbu bo'lim hozirda Free Card bilan ishlaydi, shuning uchun ushbu bo'lim tekin qilinsinmi ⁉</b>",
+                reply_markup={"inline_keyboard": [
+                    [{"text": "✅ Ha", "callback_data": "tekin-{}".format(ex)}, {"text": "❌ Yo'q", "callback_data": "soqqaFol"}]
+                ]})
+        else:
+            edit_message_text(cid2, mid2,
+                "<b>🚀 Ushbu bo'lim faqat Free Card bilan ishlaydigan qilinsinmi ⁉</b>",
+                reply_markup={"inline_keyboard": [
+                    [{"text": "✅ Ha", "callback_data": "ha_albatta-{}".format(ex)}, {"text": "❌ Yo'q", "callback_data": "soqqaFol"}]
+                ]})
+        return
+
+    if data.startswith("ha_albatta-"):
+        ex = data.split("-", 1)[1]
+        put_file("nakrutka/{}/narxi.txt".format(ex), "Pullik")
+        edit_message_text(cid2, mid2, "<b>⏳ Qabul qilindi. Endi ushbu bo'limni faqat Free Cardi bor foydalanuvchilar ishlata oladi.✅</b>")
+        return
+
+    if data.startswith("tekin-"):
+        ex = data.split("-", 1)[1]
+        put_file("nakrutka/{}/narxi.txt".format(ex), "Tekin")
+        edit_message_text(cid2, mid2, "<b>⏳ Qabul qilindi. Endi ushbu bo'limdan barcha foydalanuvchilar tekinga foydalana oladi.✅</b>")
+        return
+
+    if data == "editFol":
+        bolim_txt = get_file("nakrutka/bolim.txt", "").strip()
+        if not bolim_txt:
+            answer_callback(qid, "Hech narsa topilmadi!", show_alert=True)
+            return
+        qator1 = int(get_file("tugma/qator1.txt", "2") or 2)
+        lines = [l for l in bolim_txt.split("\n") if l.strip()]
+        keys = [{"text": l, "callback_data": "editFolss-{}".format(l)} for l in lines]
+        rows = [keys[i:i+qator1] for i in range(0, len(keys), qator1)]
+        rows.append([{"text": "Orqaga", "callback_data": "buy"}])
+        edit_message_text(cid2, mid2, "<b>Quyidagilardan birini tanlang:</b>", reply_markup={"inline_keyboard": rows})
+        return
+
+    if data.startswith("editFolss-"):
+        ex = data.split("-", 1)[1]
+        delete_message(cid2, mid2)
+        send_message(cid2, "<b>Yangi qiymatni kiriting:</b>", reply_markup=boshqarish_kb)
+        put_file("step/{}.step".format(cid2), "editFol-{}".format(ex))
+        return
+
+    if data == "editFold":
+        bolim_txt = get_file("nakrutka/bolim.txt", "").strip()
+        if not bolim_txt:
+            answer_callback(qid, "Hech narsa topilmadi!", show_alert=True)
+            return
+        qator1 = int(get_file("tugma/qator1.txt", "2") or 2)
+        lines = [l for l in bolim_txt.split("\n") if l.strip()]
+        keys = [{"text": l, "callback_data": "editFolds-{}".format(l)} for l in lines]
+        rows = [keys[i:i+qator1] for i in range(0, len(keys), qator1)]
+        rows.append([{"text": "Orqaga", "callback_data": "buy"}])
+        edit_message_text(cid2, mid2, "<b>Quyidagilardan birini tanlang:</b>", reply_markup={"inline_keyboard": rows})
+        return
+
+    if data.startswith("editFolds-"):
+        b = data.split("-", 1)[1]
+        ichki_txt = get_file("nakrutka/{}/ichki.txt".format(b), "").strip()
+        put_file("step/{}.bol".format(cid2), b)
+        if not ichki_txt:
+            answer_callback(qid, "Hech narsa topilmadi!", show_alert=True)
+            return
+        qator2 = int(get_file("tugma/qator2.txt", "1") or 1)
+        lines = [l for l in ichki_txt.split("\n") if l.strip()]
+        keys = [{"text": l, "callback_data": "editFoldm-{}".format(l)} for l in lines]
+        rows = [keys[i:i+qator2] for i in range(0, len(keys), qator2)]
+        rows.append([{"text": "Orqaga", "callback_data": "buy"}])
+        edit_message_text(cid2, mid2, "<b>Quyidagilardan birini tanlang:</b>", reply_markup={"inline_keyboard": rows})
+        return
+
+    if data.startswith("editFoldm-"):
+        ex = data.split("-", 1)[1]
+        b = get_file("step/{}.bol".format(cid2), "").strip()
+        delete_message(cid2, mid2)
+        send_message(cid2, "<b>Yangi qiymatni kiriting:</b>", reply_markup=boshqarish_kb)
+        put_file("step/{}.step".format(cid2), "editFoldms-{}-{}".format(ex, b))
+        return
+
+    if data.startswith("tugmath-"):
+        ex = data.split("-", 1)[1]
+        holat_val = get_file("tugma/{}.txt".format(ex), "").strip()
+        delete_message(cid2, mid2)
+        send_message(cid2, "<b>Hozirgi holat:</b> {}\n\n<i>Yangi qiymatni yuboring:</i>".format(holat_val),
+            reply_markup=boshqarish_kb)
+        put_file("step/{}.step".format(cid2), "tugmath-{}".format(ex))
+        return
+
+    if data == "tugmalar":
+        k1 = get_file("tugma/key1.txt", "🚀 Buyurtma berish")
+        k2 = get_file("tugma/key2.txt", "📊 Buyurtmalarim")
+        k3 = get_file("tugma/key3.txt", "🗣 Referallar")
+        k4 = get_file("tugma/key4.txt", "💵 Hisobim")
+        k5 = get_file("tugma/key5.txt", "💰 Hisob to'ldirish")
+        k6 = get_file("tugma/key6.txt", "☎ Murojaat")
+        k7 = get_file("tugma/key7.txt", "📚 Yordam")
+        edit_message_text(cid2, mid2, "<b>✍ Tugmalarni nomini o'zgartirish uchun pastdagi menyulardan birini tanlang:</b>",
+            reply_markup={"inline_keyboard": [
+                [{"text": k1, "callback_data": "tugmath-key1"}],
+                [{"text": k2, "callback_data": "tugmath-key2"}, {"text": k4, "callback_data": "tugmath-key4"}],
+                [{"text": k3, "callback_data": "tugmath-key3"}, {"text": k5, "callback_data": "tugmath-key5"}],
+                [{"text": k7, "callback_data": "tugmath-key7"}, {"text": k6, "callback_data": "tugmath-key6"}],
+                [{"text": "⚠️ Tugmalarni oldingi holiga qaytarish", "callback_data": "reset"}],
+            ]})
+        return
+
+    if data == "reset":
+        edit_message_text(cid2, mid2,
+            "<b>Barcha tahrirlangan tugmalar bilan bog'liq sozlamalar o'chiriladi va birlamchi sozlamalar o'rnatiladi.</b>\n\n<i>Rozimisiz?</i>",
+            reply_markup={"inline_keyboard": [
+                [{"text": "Roziman", "callback_data": "roziman"}],
+                [{"text": "◀️ Orqaga", "callback_data": "tugmalar"}],
+            ]})
+        return
+
+    if data == "roziman":
+        edit_message_text(cid2, mid2, "<b>Tugma sozlamalari o'chirilib, birlamchi sozlamalar o'rnatildi.</b>",
+            reply_markup={"inline_keyboard": [[{"text": "◀️ Orqaga", "callback_data": "tugmalar"}]]})
+        delete_path("tugma")
+        mkdir_safe("tugma")
+        return
+
+    if data.startswith("javob-"):
+        parts = data.split("-")
+        target_id = parts[1] if len(parts) > 1 else ""
+        delete_message(cid2, mid2)
+        send_message(cid2, "<b>⁉️ Javob matnini yuboring!</b>",
+            reply_markup={"resize_keyboard": True, "keyboard": [[{"text": "🔙 Orqaga"}]]})
+        put_file("step/{}.step".format(cid2), "javob_ketdi-{}".format(target_id))
+        return
+
+    if data == "murojaat_qilish":
+        send_message(cid2,
+            "<b>📰 Murojaat matnini yuboring:</b>\n\n<blockquote><b>⚠️ Eslatma:</b> <i>Faqat xabarni o'zini yozing!</i></blockquote>",
+            reply_markup={"resize_keyboard": True, "keyboard": [[{"text": "🔙 Orqaga"}]]})
+        put_file("step/{}.step".format(cid2), "murojaat")
+        return
+
+    if data.startswith("editXiz"):
+        edit_message_text(cid2, mid2, "<b>Quyidagilardan birini tanlang:</b>",
+            reply_markup={"inline_keyboard": [
+                [{"text": "📝 Nomini o'zgartirish", "callback_data": "editNomi"}],
+                [{"text": "◀️ Orqaga", "callback_data": "buy"}]
+            ]})
+        return
+
+    if data == "editNomi":
+        bolim_txt = get_file("nakrutka/bolim.txt", "").strip()
+        if not bolim_txt:
+            answer_callback(qid, "Hech narsa topilmadi!", show_alert=True)
+            return
+        qator1 = int(get_file("tugma/qator1.txt", "2") or 2)
+        lines = [l for l in bolim_txt.split("\n") if l.strip()]
+        keys = [{"text": l, "callback_data": "editNoms-{}".format(l)} for l in lines]
+        rows = [keys[i:i+qator1] for i in range(0, len(keys), qator1)]
+        rows.append([{"text": "Orqaga", "callback_data": "buy"}])
+        edit_message_text(cid2, mid2, "<b>Quyidagilardan birini tanlang:</b>", reply_markup={"inline_keyboard": rows})
+        return
+
+    if data.startswith("editNoms-"):
+        b = data.split("-", 1)[1]
+        put_file("step/{}.bol".format(cid2), b)
+        ichki_txt = get_file("nakrutka/{}/ichki.txt".format(b), "").strip()
+        if not ichki_txt:
+            answer_callback(qid, "Hech narsa topilmadi!", show_alert=True)
+            return
+        qator2 = int(get_file("tugma/qator2.txt", "1") or 1)
+        lines = [l for l in ichki_txt.split("\n") if l.strip()]
+        keys = [{"text": l, "callback_data": "editNomsr-{}-{}".format(b, l)} for l in lines]
+        rows = [keys[i:i+qator2] for i in range(0, len(keys), qator2)]
+        rows.append([{"text": "Orqaga", "callback_data": "buy"}])
+        edit_message_text(cid2, mid2, "<b>Quyidagilardan birini tanlang:</b>", reply_markup={"inline_keyboard": rows})
+        return
+
+    if data.startswith("editNomsr-"):
+        parts = data.split("-")
+        b = parts[1] if len(parts) > 1 else ""
+        ich = parts[2] if len(parts) > 2 else ""
+        xizmat_txt = get_file("nakrutka/{}/{}/xizmat.txt".format(b, ich), "").strip()
+        put_file("step/{}.ich".format(cid2), ich)
+        if not xizmat_txt:
+            answer_callback(qid, "Hech narsa topilmadi!", show_alert=True)
+            return
+        qator3 = int(get_file("tugma/qator3.txt", "5") or 5)
+        lines = [l for l in xizmat_txt.split("\n") if l.strip()]
+        list_text = ""
+        keys = []
+        for i, l in enumerate(lines, 1):
+            list_text += "<b>{}.</b> {}\n".format(i, l)
+            keys.append({"text": str(i), "callback_data": "editNomlari-{}".format(l)})
+        rows = [keys[j:j+qator3] for j in range(0, len(keys), qator3)]
+        rows.append([{"text": "Orqaga", "callback_data": "buy"}])
+        edit_message_text(cid2, mid2, "<b>Quyidagilardan birini tanlang:</b>\n\n{}".format(list_text),
+            reply_markup={"inline_keyboard": rows})
+        return
+
+    if data.startswith("editNomlari-"):
+        xiz = data.split("-", 1)[1]
+        b = get_file("step/{}.bol".format(cid2), "").strip()
+        ich = get_file("step/{}.ich".format(cid2), "").strip()
+        delete_message(cid2, mid2)
+        send_message(cid2, "<b>Yangi qiymatni kiriting:</b>", reply_markup=boshqarish_kb)
+        put_file("step/{}.step".format(cid2), "editNomi-{}-{}-{}".format(xiz, b, ich))
+        return
+
+def main():
+    init_dirs()
+    get_bot_username()
+    print("Bot ishga tushdi... olg'a")
+    offset = 0
+    order_check_counter = 0
+    while True:
+        try:
+            params = {"timeout": 30, "offset": offset}
+            resp = requests.get(BASE_URL + "getUpdates", params=params, timeout=40)
+            updates = resp.json().get("result", [])
+            for update in updates:
+                offset = update["update_id"] + 1
+                try:
+                    if "message" in update:
+                        process_message(update)
+                    elif "callback_query" in update:
+                        process_callback(update)
+                except Exception as e:
+                    print("Update processing error:", e)
+            order_check_counter += 1
+            if order_check_counter >= 10:
+                order_check_counter = 0
+                try:
+                    check_orders()
+                except Exception as e:
+                    print("check_orders error:", e)
+        except Exception as e:
+            print("Polling error:", e)
+            time.sleep(5)
+
+if __name__ == "__main__":
+    main()
